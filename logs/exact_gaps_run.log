@@ -1,0 +1,18 @@
+n= 6 s=1 elig= 2 | MILP Optimal   Z=341.788 LB=341.788 | CW +6.0% VNS -0.0% ALNS -0.0% DRL -0.0%
+n= 6 s=2 elig= 2 | MILP Optimal   Z=330.208 LB=330.208 | CW +1.4% VNS +1.3% ALNS -0.0% DRL +0.2%
+n= 6 s=3 elig= 2 | MILP Optimal   Z=230.273 LB=230.273 | CW +10.1% VNS +0.0% ALNS +0.0% DRL +0.0%
+n= 6 s=4 elig= 2 | MILP Optimal   Z=307.19 LB=307.19 | CW +3.1% VNS +0.1% ALNS +0.1% DRL +0.1%
+n= 6 s=5 elig= 2 | MILP Optimal   Z=347.317 LB=347.317 | CW +0.1% VNS +0.0% ALNS +0.0% DRL +0.0%
+n= 8 s=1 elig= 2 | MILP Optimal   Z=335.843 LB=335.843 | CW +12.1% VNS +0.0% ALNS +0.0% DRL +4.6%
+n= 8 s=2 elig= 2 | MILP Optimal   Z=344.889 LB=344.889 | CW +15.5% VNS +0.0% ALNS +0.0% DRL +0.0%
+n= 8 s=3 elig= 2 | MILP Optimal   Z=339.847 LB=339.847 | CW +3.5% VNS +0.1% ALNS -0.0% DRL +0.1%
+n= 8 s=4 elig= 2 | MILP Optimal   Z=359.19 LB=359.19 | CW +10.6% VNS -0.0% ALNS +2.0% DRL +2.0%
+n= 8 s=5 elig= 2 | MILP Optimal   Z=423.213 LB=423.213 | CW +0.9% VNS +0.9% ALNS +0.9% DRL +0.9%
+n=10 s=1 elig= 2 | MILP Optimal   Z=394.792 LB=394.792 | CW +21.4% VNS +0.0% ALNS +0.0% DRL +3.8%
+n=10 s=2 elig= 2 | MILP Optimal   Z=385.997 LB=385.997 | CW +13.1% VNS +4.7% ALNS +1.5% DRL +6.0%
+n=10 s=3 elig= 2 | MILP Optimal   Z=398.323 LB=398.323 | CW +14.5% VNS +0.0% ALNS +0.0% DRL +0.0%
+n=10 s=4 elig= 2 | MILP Optimal   Z=387.458 LB=387.458 | CW +18.9% VNS +0.0% ALNS +0.0% DRL +0.0%
+n=10 s=5 elig= 2 | MILP Optimal   Z=454.599 LB=454.599 | CW +6.9% VNS +0.0% ALNS +0.0% DRL +0.0%
+n=12 s=1 elig= 3 | MILP TimeLimit Z=511.484 LB=507.046 | CW +18.9% VNS +4.3% ALNS +3.9% DRL +3.9%
+n=12 s=2 elig= 3 | MILP Optimal   Z=460.175 LB=460.175 | CW +12.7% VNS +3.3% ALNS +0.1% DRL -0.0%
+n=12 s=3 elig= 3 | MILP TimeLimit Z=522.488 LB=502.809 | CW +17.2% VNS +3.9% ALNS +3.9% DRL +4.0%

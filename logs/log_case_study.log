@@ -1,0 +1,15 @@
+CSDVRP-CS-Riyadh n=30 Q=None elig=17
+  VNS: Z=419.1 (41.1%)
+  ALNS+: Z=419.2 (41.0%)
+  DRL-VNS: Z=424.6 (40.3%)
+  delta=0: 418.9
+  delta=5: 426.3
+  delta=10: 424.6
+  delta=15: 433.9
+  delta=20: 424.6
+  delta=25: 424.5
+  delta=30: 438.0
+  U_max=1: 425.1
+  U_max=2: 434.7
+  U_max=3: 424.6
+Case study v2 complete -> C:\Users\utente\OneDrive - Università degli Studi dell'Aquila\Desktop\Thesis to Paper Saudi\results\casestudy_v2

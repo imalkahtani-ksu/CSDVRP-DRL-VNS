@@ -1,0 +1,35 @@
+Methods: ['CW', 'VNS', 'ALNS', 'ALNS+', 'DRL+'] | instances: 42
+  Overall  DRL+<VNS     N= 42 p=1 r=0.780 n.s.
+  Overall  DRL+<ALNS+   N= 42 p=0.979 r=0.444 n.s.
+  Overall  ALNS+<VNS    N= 42 p=1 r=0.773 n.s.
+  Overall  ALNS+<ALNS   N= 42 p=2.053e-08 r=0.757 ***
+  Overall  VNS<ALNS     N= 42 p=4.547e-13 r=0.869 ***
+  S        DRL+<VNS     N= 12 p=1 r=0.883 n.s.
+  S        DRL+<ALNS+   N= 12 p=0.9788 r=0.566 n.s.
+  S        ALNS+<VNS    N= 12 p=1 r=0.883 n.s.
+  S        ALNS+<ALNS   N= 12 p=0.05493 r=0.476 n.s.
+  S        VNS<ALNS     N= 12 p=0.0004883 r=0.861 ***
+  M        DRL+<VNS     N= 12 p=1 r=0.883 n.s.
+  M        DRL+<ALNS+   N= 12 p=0.8438 r=0.347 n.s.
+  M        ALNS+<VNS    N= 12 p=1 r=0.883 n.s.
+  M        ALNS+<ALNS   N= 12 p=0.02612 r=0.566 *
+  M        VNS<ALNS     N= 12 p=0.0002441 r=0.883 ***
+  L        DRL+<VNS     N= 12 p=1 r=0.891 n.s.
+  L        DRL+<ALNS+   N= 12 p=1 r=0.000 n.s.
+  L        ALNS+<VNS    N= 12 p=1 r=0.891 n.s.
+  L        ALNS+<ALNS   N= 12 p=0.0002441 r=0.883 ***
+  L        VNS<ALNS     N= 12 p=0.0002441 r=0.883 ***
+  XL       DRL+<VNS     N=  6 p=0.8438 r=0.385 n.s.
+  XL       DRL+<ALNS+   N=  6 p=1 r=0.000 n.s.
+  XL       ALNS+<VNS    N=  6 p=0.8438 r=0.385 n.s.
+  XL       ALNS+<ALNS   N=  6 p=0.01562 r=0.899 *
+  XL       VNS<ALNS     N=  6 p=0.01562 r=0.899 *
+
+Mean improvement over CW (%):
+  S        | VNS  8.98% | ALNS  6.26% | ALNS+  7.20% | DRL+  6.67%
+  M        | VNS 11.19% | ALNS  7.84% | ALNS+  9.04% | DRL+  8.82%
+  L        | VNS  7.16% | ALNS  2.14% | ALNS+  6.98% | DRL+  6.98%
+  XL       | VNS  7.92% | ALNS  0.34% | ALNS+  7.50% | DRL+  7.50%
+  Overall  | VNS  8.41% | ALNS  3.16% | ALNS+  7.59% | DRL+  7.49%
+
+Saved results/stats_v4.csv and results/agg_v4.csv

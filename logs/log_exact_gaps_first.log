@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "C:\Users\utente\OneDrive - Università degli Studi dell'Aquila\Desktop\Thesis to Paper Saudi\run_exact_gaps.py", line 99, in <module>
+    main()
+  File "C:\Users\utente\OneDrive - Università degli Studi dell'Aquila\Desktop\Thesis to Paper Saudi\run_exact_gaps.py", line 38, in main
+    agent.load(MODEL_PATH, for_inference=True)
+  File "C:\Users\utente\OneDrive - Università degli Studi dell'Aquila\Desktop\Thesis to Paper Saudi\src\ppo.py", line 216, in load
+    self.net.load_state_dict(ckpt["model"])
+  File "C:\Users\utente\AppData\Local\Programs\Python\Python311\Lib\site-packages\torch\nn\modules\module.py", line 2639, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for ActorCritic:
+	size mismatch for actor.weight: copying a param with shape torch.Size([18, 64]) from checkpoint, the shape in current model is torch.Size([6, 64]).
+	size mismatch for actor.bias: copying a param with shape torch.Size([18]) from checkpoint, the shape in current model is torch.Size([6]).

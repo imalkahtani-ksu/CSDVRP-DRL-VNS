@@ -1,0 +1,32 @@
+node_id,name,x,y,demand,alpha,U_max,eta,node_type,lat,lon,tier,beds
+0,NUPCO Central Warehouse,21.44,63.7,0.0,0,0,0.0,depot,24.706,46.672,0,0
+1,King Abdulaziz Medical City (NGHA),26.86,55.38,18.0,1,3,1.15,customer,24.689,46.6842,1,1500
+2,King Faisal Specialist Hospital,36.95,55.18,18.0,1,3,1.15,customer,24.6886,46.7069,1,1200
+3,King Khalid University Hospital,39.08,7.25,13.3,1,3,1.15,customer,24.5906,46.7117,1,800
+4,Prince Sultan Military Medical City,50.77,40.22,11.7,1,3,1.15,customer,24.658,46.738,1,700
+5,King Fahad Medical City,39.66,5.0,18.0,1,3,1.15,customer,24.586,46.713,1,1200
+6,King Salman Hospital,30.33,43.64,7.5,1,3,1.15,customer,24.665,46.692,1,450
+7,King Abdulaziz Hospital MOH,5.0,66.14,7.0,1,3,1.15,customer,24.711,46.635,1,380
+8,Security Forces Hospital,44.99,51.47,6.0,1,2,0.95,customer,24.681,46.725,2,350
+9,Saudi German Hospital Al Olaya,21.44,79.35,6.0,1,2,0.95,customer,24.738,46.672,2,300
+10,Dallah Hospital,11.67,50.98,4.8,1,2,0.95,customer,24.68,46.65,2,240
+11,Dr. Sulaiman Al Habib Al Olaya,25.0,60.27,5.6,1,2,0.95,customer,24.699,46.68,2,280
+12,Al Mouwasat Hospital,29.44,46.09,4.0,1,2,0.95,customer,24.67,46.69,2,200
+13,Al Hamad International Medical Center,41.88,63.21,3.6,1,2,0.95,customer,24.705,46.718,2,180
+14,Saudi German Hospital Al Nakheel,20.55,95.0,4.0,1,2,0.95,customer,24.77,46.67,2,200
+15,Specialized Medical Center Hospital,20.55,55.87,3.6,1,2,0.95,customer,24.69,46.67,2,180
+16,Al Zahrawi Hospital,38.33,70.54,3.2,1,2,0.95,customer,24.72,46.71,2,160
+17,National Hospital Riyadh,31.66,60.76,4.0,1,2,0.95,customer,24.7,46.695,2,200
+18,Al Yamamah Hospital,49.44,82.77,2.5,0,1,0.8,customer,24.745,46.735,3,110
+19,Soliman Fakeeh Hospital,47.21,58.32,1.8,0,1,0.8,customer,24.695,46.73,3,80
+20,Al Buhayra Health Centre,38.33,41.2,1.5,0,1,0.8,customer,24.66,46.71,3,65
+21,Al Rawdah Health Centre,29.44,75.43,1.6,0,1,0.8,customer,24.73,46.69,3,70
+22,Al Nafisa Primary Hospital,42.77,31.41,1.5,0,1,0.8,customer,24.64,46.72,3,55
+23,Al Andalus Health Centre,36.11,87.66,1.5,0,1,0.8,customer,24.755,46.705,3,60
+24,Sulaimaniyah Primary,40.55,53.42,1.6,0,1,0.8,customer,24.685,46.715,3,70
+25,Al Muraba Primary,36.11,48.53,1.5,0,1,0.8,customer,24.675,46.705,3,55
+26,Al Shifa Primary,53.88,58.32,1.5,0,1,0.8,customer,24.695,46.745,3,60
+27,Al Nuzha Primary,53.88,90.11,1.5,0,1,0.8,customer,24.76,46.745,3,50
+28,Al Malaz Primary,47.21,36.3,1.5,0,1,0.8,customer,24.65,46.73,3,55
+29,Al Hamra Primary,25.0,28.97,1.5,0,1,0.8,customer,24.635,46.68,3,60
+30,Al Aziziyah Primary,33.88,21.63,1.5,0,1,0.8,customer,24.62,46.7,3,65

@@ -1,0 +1,13 @@
+{
+  "delta": 15.0,
+  "mu": 0.05,
+  "dist_cost": 1.0,
+  "dist_metric": "Euclidean",
+  "instance": "CSDVRP-CS-Riyadh",
+  "n": 30,
+  "K_total": 4,
+  "total_fleet_cap": 200,
+  "size_class": "M",
+  "description": "NUPCO Central Warehouse to 30 hospitals in Riyadh. 7 Tier-1 tertiary (U_max=3), 10 Tier-2 specialized (U_max=2), 13 Tier-3 primary (U_max=1). Fleet: 4 refrigerated vans Q=50. Utilisation 79.6%%.",
+  "data_source": "Hospital locations: MOH Saudi Arabia interactive map. Depot: NUPCO As Sahafah, Riyadh. Bed counts: MOH Annual Statistical Book 2023."
+}

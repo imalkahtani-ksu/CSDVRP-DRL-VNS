@@ -1,0 +1,17 @@
+S n=15 s=1 elig=4: FULL cost=599.46 splits=1 | SDVRP cost=584.26 splits=3
+S n=15 s=2 elig=4: FULL cost=618.81 splits=1 | SDVRP cost=603.81 splits=5
+S n=15 s=3 elig=4: FULL cost=616.89 splits=1 | SDVRP cost=586.99 splits=4
+S n=15 s=4 elig=4: FULL cost=582.62 splits=2 | SDVRP cost=552.62 splits=4
+S n=15 s=5 elig=4: FULL cost=666.51 splits=0 | SDVRP cost=660.31 splits=3
+M n=30 s=1 elig=8: FULL cost=1049.49 splits=3 | SDVRP cost=1004.22 splits=7
+M n=30 s=2 elig=8: FULL cost=950.1 splits=1 | SDVRP cost=896.0 splits=9
+M n=30 s=3 elig=8: FULL cost=996.75 splits=2 | SDVRP cost=965.5 splits=14
+M n=30 s=4 elig=8: FULL cost=961.68 splits=1 | SDVRP cost=929.71 splits=8
+M n=30 s=5 elig=8: FULL cost=1115.89 splits=1 | SDVRP cost=1079.78 splits=10
+L n=50 s=1 elig=12: FULL cost=1533.3 splits=4 | SDVRP cost=1440.61 splits=13
+L n=50 s=2 elig=12: FULL cost=1484.67 splits=1 | SDVRP cost=1431.78 splits=16
+L n=50 s=3 elig=12: FULL cost=1445.88 splits=2 | SDVRP cost=1388.1 splits=16
+L n=50 s=4 elig=12: FULL cost=1710.37 splits=1 | SDVRP cost=1581.02 splits=14
+L n=50 s=5 elig=12: FULL cost=1663.56 splits=3 | SDVRP cost=1566.34 splits=13
+
+Saved 75 rows to results/price_of_control.csv
