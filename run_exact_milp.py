@@ -34,9 +34,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--shard", type=int, default=0)
     ap.add_argument("--nshards", type=int, default=1)
+    ap.add_argument("--sizes", default=",".join(str(s) for s in SIZES))
+    ap.add_argument("--tl", type=int, default=TL)
+    ap.add_argument("--tag", default="")
     args = ap.parse_args()
-    jobs = [(n, s) for n in SIZES for s in SEEDS][args.shard::args.nshards]
-    out = ROOT / "results_v2" / f"exact_milp_shard{args.shard}.csv"
+    sizes = [int(x) for x in args.sizes.split(",")]
+    jobs = [(n, s) for n in sizes for s in SEEDS][args.shard::args.nshards]
+    out = ROOT / "results_v2" / f"exact_milp{args.tag}_shard{args.shard}.csv"
     out.parent.mkdir(exist_ok=True)
     done = set()
     if out.exists():
@@ -52,7 +56,7 @@ def main():
             continue
         cw = clarke_wright(inst, seed=0).n_routes_active()
         K = cw + 1
-        r = solve_exact(inst, time_limit=TL, K=K)
+        r = solve_exact(inst, time_limit=args.tl, K=K)
         row = {"instance": inst.name, "n": n, "seed": s,
                "split_eligible": inst.params["n_split_eligible"],
                "total_demand": round(inst.total_demand, 2),
@@ -63,7 +67,7 @@ def main():
                "vehicles_used": r["vehicles_used"],
                "cbc_version": r["cbc_version"]}
         if r["proven_optimal"]:
-            r1 = solve_exact(inst, time_limit=TL, K=K + 1)
+            r1 = solve_exact(inst, time_limit=args.tl, K=K + 1)
             row.update({"K1_status": r1["status"], "K1_Z": r1["Z"],
                         "K1_time_s": round(r1["time_s"], 2),
                         "K1_vehicles_used": r1["vehicles_used"]})
