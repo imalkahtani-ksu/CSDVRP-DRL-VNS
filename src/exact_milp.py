@@ -27,8 +27,12 @@ import pulp
 from .instance import CSDVRPInstance
 
 
+EPS_DELIVERY = 0.01   # minimum quantity of any visit (y_ik >= eps * v_ik)
+
+
 def solve_exact(inst: CSDVRPInstance, time_limit: int = 600,
-                split_eligible=None, msg: bool = False) -> Dict:
+                split_eligible=None, msg: bool = False,
+                K: int = None) -> Dict:
     """
     Solve the C-SDVRP exactly (or to a time-limited bound) with CBC.
 
@@ -58,11 +62,13 @@ def solve_exact(inst: CSDVRPInstance, time_limit: int = 600,
     Q    = float(vt["capacity"])
     e_k  = float(vt["emit_base"])
     beta = float(vt["emit_beta"])
-    # Tight fleet size: minimum vehicles to serve all demand, +1 slack for splits.
-    # Fewer vehicles => far fewer binaries => CBC closes the gap on smaller n.
-    import math
-    Kmin = max(1, math.ceil(inst.total_demand / Q))
-    K    = Kmin + 1
+    # Number of vehicle copies in the model. The problem has an unlimited
+    # homogeneous fleet; the caller passes K (by default the number of routes
+    # of the Clarke-Wright solution plus one, which is always feasible) and
+    # the result reports how many vehicles the optimum actually used.
+    if K is None:
+        from .clarke_wright import clarke_wright
+        K = clarke_wright(inst, seed=0).n_routes_active() + 1
     Kset = list(range(K))
 
     if split_eligible is None:
@@ -99,6 +105,7 @@ def solve_exact(inst: CSDVRPInstance, time_limit: int = 600,
     for i in C:
         for k in Kset:
             prob += y[i, k] <= Q * vis[i, k]
+            prob += y[i, k] >= EPS_DELIVERY * vis[i, k]
             prob += vis[i, k] == pulp.lpSum(x[j, i, k] for j in V if j != i)  # enter
             prob += pulp.lpSum(x[i, j, k] for j in V if j != i) == vis[i, k]  # leave
 
@@ -136,8 +143,7 @@ def solve_exact(inst: CSDVRPInstance, time_limit: int = 600,
     # N1 (split activation) + N2 (visit cap): split count s_i
     for i in C:
         s_i = pulp.lpSum(vis[i, k] for k in Kset)
-        cap = Umax[i] if split_eligible[i] else 1      # N1: non-eligible => 1 visit
-        cap = min(cap, Umax[i]) if Umax[i] > 0 else cap  # N2
+        cap = max(1, Umax[i]) if split_eligible[i] else 1   # N1 and N2
         prob += s_i <= cap
         prob += s_i >= 1                                # must be served
         prob += sx[i] >= s_i - 1                        # split excess >= s_i - 1
@@ -167,11 +173,15 @@ def solve_exact(inst: CSDVRPInstance, time_limit: int = 600,
     # Parse CBC log for proven optimality and the best dual bound
     proven = False
     lb = None
+    cbc_version = None
     try:
         with open(log_path, "r", errors="replace") as fh:
             log = fh.read()
         if ("Optimal solution found" in log) or ("Result - Optimal" in log):
             proven = True
+        mv = re.search(r"Version:\s*([0-9.]+)", log)
+        if mv:
+            cbc_version = mv.group(1)
         # "Lower bound:  X" appears for time-limited runs; capture last value
         m = re.findall(r"Lower bound:\s*([0-9.eE+\-]+)", log)
         if m:
@@ -197,8 +207,13 @@ def solve_exact(inst: CSDVRPInstance, time_limit: int = 600,
         status = "TimeLimit" if elapsed >= time_limit - 1 else pulp_status
         gap = ((Z - lb) / lb * 100.0) if (Z is not None and lb not in (None, 0)) else None
 
+    used = None
+    if Z is not None:
+        used = sum(1 for k in Kset
+                   if sum((pulp.value(x[0, j, k]) or 0) for j in C) > 0.5)
     return {
         "status": status, "proven_optimal": proven, "Z": Z,
+        "vehicles_used": used, "cbc_version": cbc_version,
         "lower_bound": lb, "gap_pct": gap,
         "routing": rc, "emission": em, "split": sp,
         "time_s": elapsed, "n": n, "K": K,

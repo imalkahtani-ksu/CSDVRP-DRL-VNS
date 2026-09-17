@@ -1,13 +1,13 @@
 """
-ppo.py — Proximal Policy Optimisation (PPO) agent for DRL-ALNS operator selection.
+ppo.py — Proximal Policy Optimization (actor-critic) agent.
 
-State  : 17-dimensional vector encoding solution quality, iteration progress,
-         operator history, SA temperature, split/violation metrics.
-Actions: 6 operator pairs {D1,D2,D3} × {R1,R2}
-         0=(D1,R1), 1=(D1,R2), 2=(D2,R1), 3=(D2,R2), 4=(D3,R1), 5=(D3,R2)
-
-Network: Actor-Critic with two shared-head MLPs (128→64).
-Training: Clipped surrogate objective with generalised advantage estimation (GAE).
+Used by DRL-VNS (12 state features, 9 actions) and DRL-ALNS (17 state
+features, 18 actions). Network: shared MLP state_dim -> 128 -> 64 (ReLU),
+then a linear policy head (n_actions logits) and a linear value head.
+Training: clipped surrogate objective, generalized advantage estimation,
+one update per episode on that episode's transitions (on-policy buffer,
+cleared after every update; there is no replay buffer).
+Everything runs on the CPU unless CSDVRP_CUDA=1 is set.
 """
 
 import os
@@ -19,9 +19,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Categorical
 
-# Training uses GPU; inference runs on CPU (per-step latency beats GPU launch overhead
-# for this small 17→128→64→6 model).
-DEVICE        = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE        = torch.device("cuda" if (os.environ.get("CSDVRP_CUDA") == "1"
+                                        and torch.cuda.is_available()) else "cpu")
 INFER_DEVICE  = torch.device("cpu")
 
 STATE_DIM  = 17

@@ -10,9 +10,10 @@ Repair operators:
   R1  best_insertion   : greedy best-position insertion
   R2  regret_insertion : regret-2 insertion (minimise future regret)
 
-Split handling: deliveries are split automatically when a single vehicle
-cannot carry full demand; alpha_i constraint is enforced via the penalty term
-in the objective (soft), with a hard cap at alpha_i+1 visits enforced here.
+Constraint handling (hard): vehicle capacity; N1, a customer that is not
+split-eligible (U_max = 1) is served by exactly one vehicle; N2, an eligible
+customer is served by at most U_max vehicles; and a vehicle visits a customer
+at most once. The split penalty delta (N3) is charged in the objective.
 """
 
 import math
@@ -167,175 +168,150 @@ def _best_position(route: Route, cid: int, qty: float,
             best_pos   = pos
     return best_pos, best_delta
 
-def _insert_customer(routes: List[Route], inst: CSDVRPInstance,
-                     cid: int, qty: float) -> bool:
+def _insertion_options(inst: CSDVRPInstance, routes: List[Route],
+                       route_loads: List[float], cid: int, remaining: float,
+                       visited: set) -> List[Tuple[float, int, int, float]]:
     """
-    Insert (cid, qty) into the cheapest feasible position across all routes.
-    If no route has capacity, open a new one (smallest vehicle that fits).
-    Returns True if inserted.
+    Feasible placements for the next piece of customer `cid`.
+
+    `visited` holds the indices of routes that already serve `cid` in the
+    current repair. A route may serve a customer at most once, and the total
+    number of vehicles serving `cid` may not exceed U_max[cid] (U_max = 1 for
+    customers that are not split-eligible, which is how N1 is stored). A
+    partial piece is only allowed if the rest can still be delivered with the
+    visits that remain.
+
+    Returns a list of (cost, route_idx, position, quantity); route_idx = -1
+    stands for a new vehicle. The cost is the distance increase plus the split
+    penalty delta for every extra visit this placement creates or forces.
     """
-    best_route = -1
-    best_pos   = 0
-    best_delta = float("inf")
+    dm, c_km = inst._dist, inst.dist_cost
+    Q = inst.max_cap
+    u = max(1, int(inst.U_max[cid]))
+    v = len(visited)
+    left = u - v - 1
+    if left < 0:
+        return []
+    pen = inst.delta
 
-    for ri, route in enumerate(routes):
-        pos, delta = _best_position(route, cid, qty, inst)
-        if pos >= 0 and delta < best_delta:
-            best_delta = delta
-            best_route = ri
-            best_pos   = pos
-
-    if best_route >= 0:
-        routes[best_route].stops.insert(best_pos, (cid, qty))
-        return True
-
-    # No existing route can fit → open new route (smallest vehicle that fits)
-    for vt_idx, vt in enumerate(inst.vtypes):
-        if vt["capacity"] >= qty:
-            new_route = Route(vtype_idx=vt_idx, stops=[(cid, qty)])
-            routes.append(new_route)
+    def feasible(piece):
+        rest = remaining - piece
+        if rest <= 1e-9:
             return True
-    return False
+        return left > 0 and rest <= left * Q + 1e-9
+
+    def extra(piece):
+        e = pen if v >= 1 else 0.0
+        if piece < remaining - 1e-9:
+            e += pen
+        return e
+
+    opts = []
+    for ri, route in enumerate(routes):
+        if ri in visited:
+            continue
+        cap = inst.vtypes[route.vtype_idx]["capacity"]
+        avail = cap - route_loads[ri]
+        if avail <= 1e-9:
+            continue
+        piece = min(remaining, avail)
+        if not feasible(piece):
+            continue
+        stops = route.stops
+        best_d, best_p = float("inf"), 0
+        for pos in range(len(stops) + 1):
+            prev = 0 if pos == 0 else stops[pos - 1][0]
+            nxt = 0 if pos == len(stops) else stops[pos][0]
+            d = c_km * (dm[prev, cid] + dm[cid, nxt] - dm[prev, nxt])
+            if d < best_d:
+                best_d, best_p = d, pos
+        opts.append((best_d + extra(piece), ri, best_p, piece))
+
+    piece = min(remaining, Q)
+    if feasible(piece):
+        d0 = c_km * (dm[0, cid] + dm[cid, 0])
+        opts.append((d0 + extra(piece), -1, 0, piece))
+    return opts
+
+
+def _place(inst: CSDVRPInstance, routes: List[Route], route_loads: List[float],
+           cid: int, ri: int, pos: int, qty: float) -> int:
+    """Apply one placement; returns the index of the route that received it."""
+    if ri >= 0:
+        routes[ri].stops.insert(pos, (cid, qty))
+        route_loads[ri] += qty
+        return ri
+    vt_idx = 0
+    for k, vt in enumerate(inst.vtypes):
+        if vt["capacity"] >= qty - 1e-9:
+            vt_idx = k
+            break
+    routes.append(Route(vtype_idx=vt_idx, stops=[(cid, qty)]))
+    route_loads.append(qty)
+    return len(routes) - 1
+
 
 def best_insertion(inst: CSDVRPInstance, routes: List[Route],
-                   removed: Dict[int, float]) -> List[Route]:
+                   removed: Dict[int, float], rng=None) -> List[Route]:
     """
-    R1: Best-position greedy insertion.
-    For each removed customer, find the best position across all routes
-    and insert there. Process customers in random order for diversification.
-    Handles split delivery: if demand > max_cap, insert in multiple passes.
-    Route loads are cached and updated incrementally to avoid O(n) recomputation.
+    R1: greedy best insertion. Customers are processed in random order; each
+    one is placed at its cheapest feasible position, splitting only when the
+    customer is split-eligible and within its visit cap.
+    Returns None if some customer cannot be placed (the move is then rejected).
     """
-    dm   = inst._dist
-    c_km = inst.dist_cost
-
     order = list(removed.keys())
-    random.shuffle(order)
-
-    # Pre-cache route loads; updated after each insertion
+    if rng is not None:
+        order = [order[i] for i in rng.permutation(len(order))]
+    else:
+        random.shuffle(order)
     route_loads = [sum(q for _, q in r.stops) for r in routes]
 
     for cid in order:
-        remaining_qty = float(inst.demand[cid])
-        max_cap       = inst.max_cap
-
-        while remaining_qty > 1e-6:
-            # Amount to try in this pass (full remaining or capped by heaviest vehicle)
-            target_qty = min(remaining_qty, max_cap)
-
-            best_route    = -1
-            best_pos      = 0
-            best_delta    = float("inf")
-            best_ins_qty  = 0.0
-
-            for ri in range(len(routes)):
-                route = routes[ri]
-                vt    = inst.vtypes[route.vtype_idx]
-                cap   = vt["capacity"]
-                avail = cap - route_loads[ri]
-                if avail < 1e-9:
-                    continue
-                ins_qty = min(target_qty, avail)   # qty actually inserted
-                # Capacity feasibility already checked; find best position
-                stops   = route.stops
-                prev_id = 0
-                for pos in range(len(stops) + 1):
-                    prev = prev_id if pos == 0 else stops[pos - 1][0]
-                    nxt  = 0 if pos == len(stops) else stops[pos][0]
-                    delta = c_km * (dm[prev, cid] + dm[cid, nxt] - dm[prev, nxt])
-                    if delta < best_delta:
-                        best_delta   = delta
-                        best_route   = ri
-                        best_pos     = pos
-                        best_ins_qty = ins_qty
-
-            if best_route >= 0:
-                routes[best_route].stops.insert(best_pos, (cid, best_ins_qty))
-                route_loads[best_route] += best_ins_qty
-                remaining_qty -= best_ins_qty
-            else:
-                # No existing route has space — open smallest vehicle that fits
-                for vt_idx, vt in enumerate(inst.vtypes):
-                    cap = vt["capacity"]
-                    if cap >= 1e-9:
-                        ins_qty = min(remaining_qty, cap)
-                        routes.append(Route(vtype_idx=vt_idx, stops=[(cid, ins_qty)]))
-                        route_loads.append(ins_qty)
-                        remaining_qty -= ins_qty
-                        break
-                else:
-                    break  # should not happen with valid instance
-
+        remaining = float(inst.demand[cid])
+        visited = set()
+        while remaining > 1e-6:
+            opts = _insertion_options(inst, routes, route_loads, cid,
+                                      remaining, visited)
+            if not opts:
+                return None
+            _, ri, pos, qty = min(opts, key=lambda o: o[0])
+            visited.add(_place(inst, routes, route_loads, cid, ri, pos, qty))
+            remaining -= qty
     return routes
+
 
 def regret_insertion(inst: CSDVRPInstance, routes: List[Route],
-                     removed: Dict[int, float]) -> List[Route]:
+                     removed: Dict[int, float], rng=None) -> List[Route]:
     """
-    R2: Regret-2 insertion.
-    Repeatedly insert the customer whose cost difference between best and
-    second-best position is largest (highest regret).
-    Route loads cached and updated incrementally.
+    R2: regret-2 insertion. At each step the customer with the largest gap
+    between its best and second-best feasible placement is inserted first.
+    Same N1/N2 and one-visit-per-route rules as best_insertion.
+    Returns None if some customer cannot be placed.
     """
-    dm   = inst._dist
-    c_km = inst.dist_cost
-
-    uninserted  = {cid: float(inst.demand[cid]) for cid in removed}
     route_loads = [sum(q for _, q in r.stops) for r in routes]
+    remaining = {cid: float(inst.demand[cid]) for cid in removed}
+    visited = {cid: set() for cid in removed}
 
-    while uninserted:
-        regrets   = {}
-        best_info = {}
-
-        for cid, remaining_qty in uninserted.items():
-            qty = min(remaining_qty, inst.max_cap)
-
-            costs = []
-            for ri in range(len(routes)):
-                route = routes[ri]
-                vt    = inst.vtypes[route.vtype_idx]
-                avail = vt["capacity"] - route_loads[ri]
-                if avail < 1e-9:
-                    continue
-                ins_qty = min(qty, avail)
-                # Find best insertion position in this route
-                stops    = route.stops
-                best_pos = 0
-                best_d   = float("inf")
-                for pos in range(len(stops) + 1):
-                    prev = 0 if pos == 0 else stops[pos - 1][0]
-                    nxt  = 0 if pos == len(stops) else stops[pos][0]
-                    d    = c_km * (dm[prev, cid] + dm[cid, nxt] - dm[prev, nxt])
-                    if d < best_d:
-                        best_d = d; best_pos = pos
-                costs.append((best_d, ri, best_pos, ins_qty))
-
-            if not costs:
-                # Open new route — depot round-trip cost
-                d0 = c_km * (dm[0, cid] + dm[cid, 0])
-                costs.append((d0, -1, 0, min(remaining_qty, inst.max_cap)))
-
-            costs.sort(key=lambda x: x[0])
-            regrets[cid]   = (costs[1][0] if len(costs) > 1 else costs[0][0] + 1e9) - costs[0][0]
-            best_info[cid] = costs[0]
-
-        chosen             = max(regrets, key=lambda c: regrets[c])
-        delta, ri, pos, qty = best_info[chosen]
-
-        if ri >= 0:
-            routes[ri].stops.insert(pos, (chosen, qty))
-            route_loads[ri] += qty
-        else:
-            for vt_idx, vt in enumerate(inst.vtypes):
-                if vt["capacity"] >= qty:
-                    routes.append(Route(vtype_idx=vt_idx, stops=[(chosen, qty)]))
-                    route_loads.append(qty)
-                    break
-
-        uninserted[chosen] -= qty
-        if uninserted[chosen] < 1e-6:
-            del uninserted[chosen]
-
+    while remaining:
+        best_cid, best_regret, best_opt = None, -1.0, None
+        for cid in sorted(remaining):
+            opts = _insertion_options(inst, routes, route_loads, cid,
+                                      remaining[cid], visited[cid])
+            if not opts:
+                return None
+            opts.sort(key=lambda o: o[0])
+            second = opts[1][0] if len(opts) > 1 else opts[0][0] + 1e9
+            regret = second - opts[0][0]
+            if regret > best_regret:
+                best_cid, best_regret, best_opt = cid, regret, opts[0]
+        _, ri, pos, qty = best_opt
+        visited[best_cid].add(_place(inst, routes, route_loads, best_cid,
+                                     ri, pos, qty))
+        remaining[best_cid] -= qty
+        if remaining[best_cid] < 1e-6:
+            del remaining[best_cid]
     return routes
+
 
 #  POST-IMPROVEMENT OPERATORS (applied after repair, before acceptance)
 
@@ -352,6 +328,8 @@ def or_opt(routes: List[Route], inst: CSDVRPInstance, max_chain: int = 1
 
     # Pre-compute route loads once to avoid O(n_stops) recomputation in inner loop
     route_loads = [sum(q for _, q in r.stops) for r in routes]
+    # a chain may not move into a route that already serves one of its customers
+    route_custs = [{c for c, _ in r.stops} for r in routes]
 
     for ri in range(len(routes)):
         r = routes[ri]
@@ -372,8 +350,11 @@ def or_opt(routes: List[Route], inst: CSDVRPInstance, max_chain: int = 1
                     dm[prev_r, chain[0][0]] + dm[chain[-1][0], nxt_r]
                     - dm[prev_r, nxt_r])
 
+                chain_ids = {c for c, _ in chain}
                 for rj in range(len(routes)):
                     if rj == ri:
+                        continue
+                    if chain_ids & route_custs[rj]:
                         continue
                     vt = inst.vtypes[routes[rj].vtype_idx]
                     if route_loads[rj] + chain_load > vt["capacity"] + 1e-9:
@@ -399,6 +380,8 @@ def or_opt(routes: List[Route], inst: CSDVRPInstance, max_chain: int = 1
             chain_load = sum(q for _, q in chain)
             route_loads[ri] -= chain_load
             route_loads[rj] += chain_load
+            route_custs[ri] = {c for c, _ in routes[ri].stops}
+            route_custs[rj] = {c for c, _ in routes[rj].stops}
 
     return [rt for rt in routes if rt.stops]
 
@@ -450,9 +433,14 @@ def two_opt_star(routes: List[Route], inst: CSDVRPInstance) -> List[Route]:
                         new_cost = c_km * (dm[end_i, next_j] + dm[end_j, next_i])
 
                         if new_cost - old_cost < -1e-6:
-                            # Swap tails
-                            routes[ri].stops = si[:pi + 1] + tail_j
-                            routes[rj].stops = sj[:pj + 1] + tail_i
+                            new_i = si[:pi + 1] + tail_j
+                            new_j = sj[:pj + 1] + tail_i
+                            # a vehicle may serve each customer at most once
+                            if (len({c for c, _ in new_i}) < len(new_i) or
+                                    len({c for c, _ in new_j}) < len(new_j)):
+                                continue
+                            routes[ri].stops = new_i
+                            routes[rj].stops = new_j
                             improved = True
                             break
                     if improved:

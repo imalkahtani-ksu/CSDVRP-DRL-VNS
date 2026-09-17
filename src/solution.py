@@ -4,17 +4,21 @@ solution.py — Solution representation and objective computation for C-SDVRP.
 A Solution is a list of routes. Each route is assigned one vehicle type and
 contains an ordered list of (customer_id, quantity_delivered) pairs.
 
-Objective (Eq. 1):
+Objective:
   Z = dist_cost * sum(d_ij * x_ijk)   [routing cost]
-    + mu * sum(Gamma_i)               [excess emission penalty, N3]
-    + delta * sum(max(0, s_i - 1))    [split activation penalty, N1]
+    + mu * sum_i Gamma_i              [load-dependent arrival-emission excess]
+    + delta * sum_i max(0, s_i - 1)   [extra-contact penalty, N3]
 
-Arc emission (Eq. 9):
+Arc emission:
   E_ijk = e_k * dist(i,j) * (1 + beta_k * w_ijk / Q_k)
+  with w_ijk the load carried on the arc.
 
-Excess emission (Eq. 10-11):
-  E_i^A = sum over incoming arcs of E_jik
-  Gamma_i = max(0, E_i^A - eta_i * D_i)
+Arrival-emission excess of customer i:
+  E_i = sum of E_jik over arcs entering i
+  Gamma_i = max(0, E_i - eta_i * d_i)
+
+Vehicle capacity, N1 (single visit for ineligible customers) and N2 (visit
+cap) are hard constraints, checked by Solution.audit().
 """
 
 import copy
@@ -151,27 +155,43 @@ class Solution:
         return dq
 
     # feasibility checks
-    def is_feasible(self, tol: float = 1e-6) -> Tuple[bool, str]:
+    def audit(self, tol: float = 1e-6) -> Dict[str, float]:
+        """Count violations of every hard constraint of the C-SDVRP."""
         inst = self.instance
-        # Check demand satisfaction
-        dq   = self.delivered()
-        for i in range(1, inst.n + 1):
-            if abs(dq.get(i, 0.0) - inst.demand[i]) > tol:
-                return False, f"Demand not met at node {i}"
-        # Check vehicle capacity
-        for ri, route in enumerate(self.routes):
-            Q = inst.vtypes[route.vtype_idx]["capacity"]
-            if route.load > Q + tol:
-                return False, f"Capacity exceeded on route {ri}"
-        # Check N1: split bound
+        dq = self.delivered()
         sc = self.split_counts()
-        for i in range(1, inst.n + 1):
-            alpha_i = inst.alpha[i]
-            if alpha_i > 0 and sc.get(i, 1) > alpha_i + 1:
-                # alpha_i=1 means at most 2 visits (1 base + 1 split)
-                # We penalise but don't hard-violate in heuristic (soft constraint via penalty)
-                pass
-        return True, "OK"
+        demand_viol = sum(1 for i in range(1, inst.n + 1)
+                          if abs(dq.get(i, 0.0) - inst.demand[i]) > tol)
+        cap_viol, max_util = 0, 0.0
+        dup_viol, empty_stops = 0, 0
+        for route in self.routes:
+            if not route.stops:
+                continue
+            Q = inst.vtypes[route.vtype_idx]["capacity"]
+            max_util = max(max_util, route.load / Q)
+            if route.load > Q + tol:
+                cap_viol += 1
+            ids = [c for c, _ in route.stops]
+            if len(set(ids)) < len(ids):
+                dup_viol += 1
+            empty_stops += sum(1 for _, q in route.stops if q <= tol)
+        n1_viol = sum(1 for i in range(1, inst.n + 1)
+                      if int(inst.U_max[i]) <= 1 and sc.get(i, 0) > 1)
+        n2_viol = sum(1 for i in range(1, inst.n + 1)
+                      if sc.get(i, 0) > max(1, int(inst.U_max[i])))
+        return {"demand_viol": demand_viol, "cap_viol": cap_viol,
+                "n1_viol": n1_viol, "n2_viol": n2_viol,
+                "dup_visit_viol": dup_viol, "zero_qty_stops": empty_stops,
+                "max_util": round(max_util, 4),
+                "routes": self.n_routes_active(),
+                "split_customers": sum(1 for v in sc.values() if v > 1),
+                "extra_visits": sum(max(0, v - 1) for v in sc.values())}
+
+    def is_feasible(self, tol: float = 1e-6) -> Tuple[bool, str]:
+        a = self.audit(tol)
+        bad = [k for k in ("demand_viol", "cap_viol", "n1_viol", "n2_viol",
+                           "dup_visit_viol", "zero_qty_stops") if a[k]]
+        return (not bad), ("OK" if not bad else ",".join(bad))
 
     # utility
     def n_routes_active(self) -> int:

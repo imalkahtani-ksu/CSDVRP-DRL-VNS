@@ -53,7 +53,9 @@ def _apply_operator_pair(sol: Solution, d_idx: int, r_idx: int,
     if not removed:
         return sol   # nothing removed; return unchanged
 
-    new_routes = repair(sol.instance, new_routes, removed)
+    new_routes = repair(sol.instance, new_routes, removed, rng=rng)
+    if new_routes is None:
+        return sol
     new_routes = [r for r in new_routes if r.stops]
 
     # Post-repair local search (Or-opt only; 2-opt* skipped for speed on large n)

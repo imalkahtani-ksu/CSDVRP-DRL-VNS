@@ -1,125 +1,218 @@
 """
-DRL-guided Variable Neighborhood Search for the C-SDVRP.
+drl_vns.py — nine-action VNS family and the proposed DRL-VNS.
 
-Standard VNS cycles its shake neighborhood with a fixed rule (k = 1,2,...,
-k_max, reset on improvement). Here a PPO agent chooses, at each step from the
-current search state, which shake neighborhood and strength to apply. The
-RVND local search and the acceptance rule are the same as the plain VNS
-baseline, so the comparison isolates the effect of the learned schedule.
+All methods in this module share the same search engine and differ only in
+how the shake action is chosen:
 
-Action space (9): {random, related, worst} removal x {small, medium, large}.
-State (12 features): normalized current and best objective, gap to best,
-search progress, stagnation counter, recent-improvement rate, split
-fraction, and recent removal-strength usage.
+    shake     : remove q customers with one of three removal operators
+                (random, related, worst) and reinsert them with greedy best
+                insertion; q is 8%, 18% or 32% of n (small, medium, large).
+                Action a = 3 * removal_index + strength_index (9 actions).
+    descent   : shared RVND local search.
+    acceptance: the candidate replaces the incumbent only if it is strictly
+                better (the incumbent is therefore also the best solution).
+
+Action selectors
+    policy    : PPO policy on the 12-feature state below   -> DRL-VNS
+    cyclic    : standard VNS schedule over the 9 actions,
+                ordered by strength then operator; reset
+                after an improvement, advance otherwise    -> VNS-9
+    small     : small strength, removal operator uniform   -> Fixed-small
+    random    : uniform over the 9 actions                 -> Random-9
+    roulette  : adaptive weights (score 9 on improvement,
+                segments of 100 steps, reaction 0.15)      -> Roulette-9
+    marginal  : i.i.d. draws from a fixed action
+                distribution, ignoring the state           -> Marginal-9
+
+State (all features in [0, 1] or close to it)
+    0  Z_best / Z_CW                     quality relative to the start
+    1  CPU time used / budget            search progress
+    2  log(1+stag) / log(201)            steps since the last improvement
+    3  improvements in the last 20 steps / 20
+    4  10 * min(0.1, (Z_cand - Z_best) / Z_best) of the last rejected shake
+    5  min(1, n / 200)                   instance size
+    6  split customers / n               in the incumbent
+    7  split-eligible customers / n      instance feature
+    8-10 share of small / medium / large shakes in the last 20 steps
+    11 mean route load / Q               in the incumbent
+
+Reward: r_t = 100 * (Z_best before step - Z_best after step) / Z_CW >= 0.
 """
-import time
 import math
-from typing import Dict, List
+from collections import deque
+from typing import Dict, Optional
 
 import numpy as np
+import torch
 
 from .instance      import CSDVRPInstance
-from .solution      import Route, Solution
-from . import operators as _ops
-from .operators     import (random_removal, related_removal, worst_removal,
-                            best_insertion, regret_insertion)
-from .alns_plus     import _rvnd
-from .clarke_wright import clarke_wright, _pick_vehicle_tight
+from .solution      import Solution
+from .clarke_wright import clarke_wright
+from .search_common import CpuBudget, rvnd, destroy_repair, removal_count
 
-REMOVE_OPS = [random_removal, related_removal, worst_removal]
-SIZE_TIERS = [0.08, 0.18, 0.32]
-N_ACTIONS_VNS = len(REMOVE_OPS) * len(SIZE_TIERS)     # 9
+REMOVALS = ["random", "related", "worst"]
+STRENGTHS = [0.08, 0.18, 0.32]
+STRENGTH_NAMES = ["small", "medium", "large"]
+REPAIR = "best"
+N_ACTIONS_VNS = 9
 STATE_DIM_VNS = 12
-
-def decode_vns(a):
-    return a // len(SIZE_TIERS), a % len(SIZE_TIERS)   # (op_idx, size_idx)
-
-
-def _shake(sol: Solution, op_idx: int, size_frac: float, rng):
-    n = sol.instance.n
-    q = max(2, min(int(math.ceil(size_frac * n)), max(2, n - 1)))
-    op = REMOVE_OPS[op_idx]
-    saved = _ops._removal_size
-    _ops._removal_size = lambda _n, _q=q: _q
-    try:
-        routes, removed = op(sol, rng)
-    finally:
-        _ops._removal_size = saved
-    if not removed:
-        return sol
-    repair = regret_insertion if size_idx_global[0] % 2 else best_insertion
-    routes = repair(sol.instance, routes, removed)
-    return Solution(sol.instance, [r for r in routes if r.stops])
-
-# small module-global to alternate repair without widening the signature
-size_idx_global = [0]
+# neighborhood order used by the cyclic schedule: by strength, then operator
+CYCLIC_ORDER = [3 * o + s for s in range(3) for o in range(3)]
 
 
-def _state(sol, sol_best, Z0, it, I_max, stagn, recent_impr, strength_hist):
-    Z = sol.objective(); Zb = sol_best.objective()
-    sc = sol.split_counts(); n = sol.instance.n
-    nsplit = sum(1 for v in sc.values() if v > 1)
+def decode_vns(a: int):
+    return a // 3, a % 3          # (removal_index, strength_index)
+
+
+def _state(best: Solution, Z0, frac, stag, recent_impr, last_gap, n,
+           elig_frac, recent_str) -> np.ndarray:
+    Zb = best.objective()
+    sc = best.split_counts()
     s = np.zeros(STATE_DIM_VNS, dtype=np.float32)
-    s[0] = min(Z / max(Z0, 1e-6), 3.0)
-    s[1] = min(Zb / max(Z0, 1e-6), 3.0)
-    s[2] = min((Z - Zb) / max(Zb, 1e-6), 1.0)
-    s[3] = it / max(I_max, 1)
-    s[4] = min(stagn / 100.0, 1.0)
-    s[5] = recent_impr
-    s[6] = nsplit / max(n, 1)
-    s[7] = 1.0 - it / max(I_max, 1)
-    s[8:11] = strength_hist          # 3 size-tier usage fractions (recent)
-    s[11] = 1.0
+    s[0] = min(Zb / max(Z0, 1e-9), 1.5)
+    s[1] = frac
+    s[2] = min(1.0, math.log1p(stag) / math.log1p(200))
+    s[3] = (sum(recent_impr) / len(recent_impr)) if recent_impr else 0.0
+    s[4] = last_gap
+    s[5] = min(1.0, n / 200.0)
+    s[6] = sum(1 for v in sc.values() if v > 1) / max(n, 1)
+    s[7] = elig_frac
+    if recent_str:
+        for k in recent_str:
+            s[8 + k] += 1.0
+        s[8:11] /= len(recent_str)
+    loads = [r.load / best.instance.vtypes[r.vtype_idx]["capacity"]
+             for r in best.routes if r.stops]
+    s[11] = float(np.mean(loads)) if loads else 0.0
     return s
 
 
-class DRLVNS:
-    """PPO-guided VNS: the agent selects the shake neighborhood each step."""
+class VNS9:
+    """Nine-action VNS with a pluggable action selector."""
 
-    def solve(self, instance, agent, I_max=None, seed=None,
-              train=False, time_limit=None) -> Dict:
+    def __init__(self, selector: str = "cyclic", agent=None,
+                 marginal: Optional[np.ndarray] = None, name: str = None):
+        assert selector in ("policy", "cyclic", "small", "random",
+                            "roulette", "marginal")
+        self.selector = selector
+        self.agent = agent
+        self.marginal = None if marginal is None else np.asarray(marginal, float)
+        self.name = name or {"policy": "DRL-VNS", "cyclic": "VNS-9",
+                             "small": "Fixed-small", "random": "Random-9",
+                             "roulette": "Roulette-9",
+                             "marginal": "Marginal-9"}[selector]
+
+    def solve(self, instance: CSDVRPInstance, seed: int = None,
+              time_limit: float = None, I_max: int = None,
+              train: bool = False) -> Dict:
+        sel = self.selector
         rng = np.random.default_rng(seed)
-        I_max = I_max or 3000
+        if sel == "policy":
+            torch.manual_seed(0 if seed is None else int(seed))
+            self.agent.net.eval()
+        budget = CpuBudget(time_limit)
+        I_max = I_max or 10**9
+        n = instance.n
+
         sol0 = clarke_wright(instance, seed=seed)
         Z0 = sol0.objective()
-        cur = Solution(instance, _rvnd([r.copy() for r in sol0.routes], instance, rng))
-        best = cur.copy()
-        stagn = 0
-        recent = []                      # 1 if improved best in last steps
-        strength_use = np.zeros(3)
-        hist = []
-        t0 = time.perf_counter()
-        agent.net.eval()
-        for it in range(I_max):
-            if time_limit and time.perf_counter() - t0 > time_limit:
-                break
-            sh = strength_use / max(strength_use.sum(), 1.0)
-            ri = float(np.mean(recent[-50:])) if recent else 0.0
-            st = _state(cur, best, Z0, it, I_max, stagn, ri, sh)
-            action, logp, val = agent.select_action(st)
-            op_idx, size_idx = decode_vns(action)
-            size_idx_global[0] = size_idx
-            cand = _shake(cur, op_idx, SIZE_TIERS[size_idx], rng)
-            cand = Solution(instance, _rvnd([r.copy() for r in cand.routes], instance, rng))
-            improved_best = cand.objective() < best.objective() - 1e-9
-            # VNS acceptance: descend on the incumbent
-            reward = (cur.objective() - cand.objective()) / max(Z0, 1e-6)
-            if cand.objective() < cur.objective() - 1e-9:
-                cur = cand; stagn = 0
+        best = Solution(instance, rvnd(sol0.routes, instance, rng))
+        elig_frac = sum(1 for i in range(1, n + 1)
+                        if int(instance.U_max[i]) > 1) / max(n, 1)
+        qs = [removal_count(n, f) for f in STRENGTHS]
+
+        w = np.ones(N_ACTIONS_VNS)
+        seg_score = np.zeros(N_ACTIONS_VNS)
+        seg_use = np.zeros(N_ACTIONS_VNS)
+        k = 0
+        stag = 0
+        last_gap = 0.0
+        recent_impr = deque(maxlen=20)
+        recent_str = deque(maxlen=20)
+
+        usage = np.zeros((3, 3, N_ACTIONS_VNS))     # phase x stagnation x action
+        uses = np.zeros(N_ACTIONS_VNS)
+        wins = np.zeros(N_ACTIONS_VNS)
+        history = [(0.0, best.objective())]
+        stored = 0
+        it = 0
+
+        while it < I_max and not budget.expired():
+            frac = budget.fraction()
+            st = None
+            if sel == "policy":
+                st = _state(best, Z0, frac, stag, recent_impr, last_gap, n,
+                            elig_frac, recent_str)
+                a, logp, val = self.agent.select_action(st)
+            elif sel == "cyclic":
+                a = CYCLIC_ORDER[k]
+            elif sel == "small":
+                a = 3 * int(rng.integers(3)) + 0
+            elif sel == "random":
+                a = int(rng.integers(N_ACTIONS_VNS))
+            elif sel == "roulette":
+                a = int(rng.choice(N_ACTIONS_VNS, p=w / w.sum()))
             else:
-                stagn += 1
-            if improved_best:
-                best = cand.copy()
-            recent.append(1 if improved_best else 0)
-            strength_use[size_idx] += 1
-            if train:
-                agent.store(st, action, reward, val, logp, it == I_max - 1)
-            hist.append(action)
-        if train:
-            agent.update(last_value=0.0); agent.net.eval()
-        for r in best.routes:
-            if r.stops: r.vtype_idx = _pick_vehicle_tight(instance, r.load)
-        best.invalidate()
+                a = int(rng.choice(N_ACTIONS_VNS, p=self.marginal))
+            o_idx, s_idx = decode_vns(a)
+
+            Zb = best.objective()
+            cand = destroy_repair(best, REMOVALS[o_idx], qs[s_idx], REPAIR, rng)
+            if cand is not None:
+                cand = Solution(instance, rvnd(cand.routes, instance, rng))
+            improved = cand is not None and cand.objective() < Zb - 1e-9
+
+            phase = min(2, int(frac * 3))
+            sbin = 0 if stag < 5 else (1 if stag < 20 else 2)
+            usage[phase, sbin, a] += 1
+            uses[a] += 1
+            if improved:
+                best = cand
+                wins[a] += 1
+                stag = 0
+                last_gap = 0.0
+                history.append((budget.elapsed(), best.objective()))
+            else:
+                stag += 1
+                last_gap = 0.0 if cand is None else \
+                    10.0 * min(0.1, max(0.0, (cand.objective() - Zb) / Zb))
+
+            if sel == "policy" and train:
+                reward = 100.0 * (Zb - best.objective()) / max(Z0, 1e-9)
+                self.agent.store(st, a, reward, val, logp, False)
+                stored += 1
+            if sel == "cyclic":
+                k = 0 if improved else (k + 1) % N_ACTIONS_VNS
+            elif sel == "roulette":
+                seg_score[a] += 9.0 if improved else 0.0
+                seg_use[a] += 1
+                if (it + 1) % 100 == 0:
+                    for j in range(N_ACTIONS_VNS):
+                        if seg_use[j] > 0:
+                            w[j] = max(0.01, 0.85 * w[j]
+                                       + 0.15 * seg_score[j] / seg_use[j])
+                    seg_score[:] = 0
+                    seg_use[:] = 0
+            recent_impr.append(1 if improved else 0)
+            recent_str.append(s_idx)
+            it += 1
+
+        cpu = budget.elapsed()
+        train_stats = {}
+        if sel == "policy" and train and stored > 1:
+            self.agent._dones[-1] = True
+            train_stats = self.agent.update(last_value=0.0)
+            self.agent.net.eval()
+
         return {"best": best, "Z_best": best.objective(), "Z_init": Z0,
-                "time_s": time.perf_counter() - t0, "iters": it + 1,
-                "method": "DRL-VNS", "op_history": hist}
+                "history": history, "cpu_s": cpu, "wall_s": budget.wall(),
+                "iters": it, "method": self.name,
+                "usage": usage, "uses": uses, "wins": wins,
+                "train_stats": train_stats}
+
+
+class DRLVNS(VNS9):
+    """The proposed method: VNS9 with the PPO selector."""
+
+    def __init__(self, agent):
+        super().__init__(selector="policy", agent=agent, name="DRL-VNS")
