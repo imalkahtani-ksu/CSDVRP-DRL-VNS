@@ -53,15 +53,39 @@ from .search_common import CpuBudget, rvnd, destroy_repair, removal_count
 REMOVALS = ["random", "related", "worst"]
 STRENGTHS = [0.08, 0.18, 0.32]
 STRENGTH_NAMES = ["small", "medium", "large"]
-REPAIR = "best"
-N_ACTIONS_VNS = 9
+REPAIRS = ["best", "regret"]
 STATE_DIM_VNS = 12
-# neighborhood order used by the cyclic schedule: by strength, then operator
-CYCLIC_ORDER = [3 * o + s for s in range(3) for o in range(3)]
+
+# Two action sets. The nine-action set reinserts with greedy insertion only.
+# The eighteen-action set adds regret-2 insertion, so that it contains the
+# moves of the standard VNS baseline (which alternates the two) and the
+# comparison is not confounded by a missing operator. The first nine indices
+# are identical in both sets.
+ACTIONS_9 = [(o, s, 0) for o in range(3) for s in range(3)]
+ACTIONS_18 = ACTIONS_9 + [(o, s, 1) for o in range(3) for s in range(3)]
+ACTION_SETS = {9: ACTIONS_9, 18: ACTIONS_18}
+N_ACTIONS_VNS = 9                 # default, kept for the nine-action study
 
 
-def decode_vns(a: int):
-    return a // 3, a % 3          # (removal_index, strength_index)
+def decode_vns(a: int, n_actions: int = 9):
+    """action index -> (removal index, strength index, repair index)"""
+    return ACTION_SETS[n_actions][a]
+
+
+def action_name(a: int, n_actions: int = 9) -> str:
+    o, s, r = decode_vns(a, n_actions)
+    base = f"{REMOVALS[o]}-{STRENGTH_NAMES[s]}"
+    return base if n_actions == 9 else f"{base}-{REPAIRS[r]}"
+
+
+def cyclic_order(n_actions: int = 9):
+    """Standard VNS ordering of the neighborhoods: by strength, then operator,
+    then repair."""
+    acts = ACTION_SETS[n_actions]
+    return sorted(range(len(acts)), key=lambda a: (acts[a][1], acts[a][0], acts[a][2]))
+
+
+CYCLIC_ORDER = cyclic_order(9)
 
 
 def _state(best: Solution, Z0, frac, stag, recent_impr, last_gap, n,
@@ -91,16 +115,23 @@ class VNS9:
     """Nine-action VNS with a pluggable action selector."""
 
     def __init__(self, selector: str = "cyclic", agent=None,
-                 marginal: Optional[np.ndarray] = None, name: str = None):
-        assert selector in ("policy", "cyclic", "small", "random",
+                 marginal: Optional[np.ndarray] = None, name: str = None,
+                 n_actions: int = 9, fixed_action: int = None):
+        assert selector in ("policy", "cyclic", "small", "fixed", "random",
                             "roulette", "marginal")
         self.selector = selector
         self.agent = agent
+        self.n_actions = n_actions
+        self.actions = ACTION_SETS[n_actions]
+        self.order = cyclic_order(n_actions)
+        self.fixed_action = fixed_action
         self.marginal = None if marginal is None else np.asarray(marginal, float)
-        self.name = name or {"policy": "DRL-VNS", "cyclic": "VNS-9",
-                             "small": "Fixed-small", "random": "Random-9",
-                             "roulette": "Roulette-9",
-                             "marginal": "Marginal-9"}[selector]
+        tag = "" if n_actions == 9 else "18"
+        self.name = name or {"policy": f"DRL-VNS{tag}", "cyclic": f"VNS-{n_actions}",
+                             "small": "Fixed-small", "fixed": "Fixed-dominant",
+                             "random": f"Random-{n_actions}",
+                             "roulette": f"Roulette-{n_actions}",
+                             "marginal": f"Marginal-{n_actions}"}[selector]
 
     def solve(self, instance: CSDVRPInstance, seed: int = None,
               time_limit: float = None, I_max: int = None,
@@ -121,18 +152,19 @@ class VNS9:
                         if int(instance.U_max[i]) > 1) / max(n, 1)
         qs = [removal_count(n, f) for f in STRENGTHS]
 
-        w = np.ones(N_ACTIONS_VNS)
-        seg_score = np.zeros(N_ACTIONS_VNS)
-        seg_use = np.zeros(N_ACTIONS_VNS)
+        nA = self.n_actions
+        w = np.ones(nA)
+        seg_score = np.zeros(nA)
+        seg_use = np.zeros(nA)
         k = 0
         stag = 0
         last_gap = 0.0
         recent_impr = deque(maxlen=20)
         recent_str = deque(maxlen=20)
 
-        usage = np.zeros((3, 3, N_ACTIONS_VNS))     # phase x stagnation x action
-        uses = np.zeros(N_ACTIONS_VNS)
-        wins = np.zeros(N_ACTIONS_VNS)
+        usage = np.zeros((3, 3, nA))                # phase x stagnation x action
+        uses = np.zeros(nA)
+        wins = np.zeros(nA)
         history = [(0.0, best.objective())]
         stored = 0
         it = 0
@@ -145,19 +177,22 @@ class VNS9:
                             elig_frac, recent_str)
                 a, logp, val = self.agent.select_action(st)
             elif sel == "cyclic":
-                a = CYCLIC_ORDER[k]
+                a = self.order[k]
             elif sel == "small":
                 a = 3 * int(rng.integers(3)) + 0
+            elif sel == "fixed":
+                a = self.fixed_action
             elif sel == "random":
-                a = int(rng.integers(N_ACTIONS_VNS))
+                a = int(rng.integers(nA))
             elif sel == "roulette":
-                a = int(rng.choice(N_ACTIONS_VNS, p=w / w.sum()))
+                a = int(rng.choice(nA, p=w / w.sum()))
             else:
-                a = int(rng.choice(N_ACTIONS_VNS, p=self.marginal))
-            o_idx, s_idx = decode_vns(a)
+                a = int(rng.choice(nA, p=self.marginal))
+            o_idx, s_idx, r_idx = self.actions[a]
 
             Zb = best.objective()
-            cand = destroy_repair(best, REMOVALS[o_idx], qs[s_idx], REPAIR, rng)
+            cand = destroy_repair(best, REMOVALS[o_idx], qs[s_idx],
+                                  REPAIRS[r_idx], rng)
             if cand is not None:
                 cand = Solution(instance, rvnd(cand.routes, instance, rng))
             improved = cand is not None and cand.objective() < Zb - 1e-9
@@ -182,12 +217,12 @@ class VNS9:
                 self.agent.store(st, a, reward, val, logp, False)
                 stored += 1
             if sel == "cyclic":
-                k = 0 if improved else (k + 1) % N_ACTIONS_VNS
+                k = 0 if improved else (k + 1) % nA
             elif sel == "roulette":
                 seg_score[a] += 9.0 if improved else 0.0
                 seg_use[a] += 1
                 if (it + 1) % 100 == 0:
-                    for j in range(N_ACTIONS_VNS):
+                    for j in range(nA):
                         if seg_use[j] > 0:
                             w[j] = max(0.01, 0.85 * w[j]
                                        + 0.15 * seg_score[j] / seg_use[j])
@@ -214,5 +249,5 @@ class VNS9:
 class DRLVNS(VNS9):
     """The proposed method: VNS9 with the PPO selector."""
 
-    def __init__(self, agent):
-        super().__init__(selector="policy", agent=agent, name="DRL-VNS")
+    def __init__(self, agent, n_actions: int = 9):
+        super().__init__(selector="policy", agent=agent, n_actions=n_actions)

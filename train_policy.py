@@ -42,10 +42,10 @@ VALID_SET = [("S", 20, 9000), ("S", 20, 9001), ("M", 50, 9002),
              ("M", 50, 9003), ("L", 75, 9004), ("L", 75, 9005)]
 
 
-def build(algo):
+def build(algo, n_actions=9):
     if algo == "vns":
-        agent = PPOAgent(n_actions=N_ACTIONS_VNS, state_dim=STATE_DIM_VNS)
-        return agent, DRLVNS(agent)
+        agent = PPOAgent(n_actions=n_actions, state_dim=STATE_DIM_VNS)
+        return agent, DRLVNS(agent, n_actions=n_actions)
     agent = PPOAgent(n_actions=N_ACTIONS_PLUS, state_dim=STATE_DIM_PLUS)
     return agent, DRLALNSPlus(agent)
 
@@ -67,11 +67,12 @@ def main():
     ap.add_argument("--episodes", type=int, default=EPISODES)
     ap.add_argument("--out", default="models_v2")
     ap.add_argument("--valid-every", type=int, default=VALID_EVERY)
+    ap.add_argument("--actions", type=int, default=9, choices=[9, 18])
     args = ap.parse_args()
 
     out = Path(__file__).parent / args.out
     out.mkdir(exist_ok=True)
-    tag = f"{args.algo}_seed{args.seed}"
+    tag = f"{args.algo}{'' if args.actions == 9 else args.actions}_seed{args.seed}"
     logf = open(out / f"{tag}_train.log", "w", encoding="utf-8", buffering=1)
     curve = []
 
@@ -81,7 +82,7 @@ def main():
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    agent, solver = build(args.algo)
+    agent, solver = build(args.algo, args.actions)
     n_params = sum(p.numel() for p in agent.net.parameters())
     valid = [(make_instance(n, sc, seed=s), n) for sc, n, s in VALID_SET]
     log(f"train {tag}: {args.episodes} episodes, network parameters {n_params}")

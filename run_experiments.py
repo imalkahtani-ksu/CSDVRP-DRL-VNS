@@ -54,6 +54,10 @@ CASE_DIR = ROOT / "data" / "case_study_riyadh"
 
 ALL_METHODS = ["VNS", "ALNS+", "DRL-ALNS", "DRL-VNS", "VNS-9",
                "Fixed-small", "Random-9", "Roulette-9", "Marginal-9"]
+# the eighteen-action family, whose action set contains the moves of the
+# standard VNS baseline (both insertion operators)
+METHODS18 = ["DRL-VNS18", "VNS-18", "Fixed-dominant", "Random-18",
+             "Roulette-18", "Marginal-18"]
 GRID = [("S", 15), ("S", 20), ("M", 30), ("M", 50),
         ("L", 75), ("L", 100), ("XL", 150)]
 N_RUNS = 10
@@ -121,6 +125,20 @@ def build_jobs(suites):
             for m in ALL_METHODS:
                 for r in range(N_RUNS):
                     jobs.append((suite, ("case",), "base", m, r, CASE_BUDGET))
+        elif suite == "family18":
+            for sc, n in GRID:
+                for s in range(6):
+                    for m in METHODS18:
+                        for r in range(N_RUNS):
+                            jobs.append((suite, ("bench", sc, n, s), "base", m, r, BUDGET[n]))
+            for n in (6, 8, 10, 12):
+                for s in range(1, 6):
+                    for m in METHODS18:
+                        for r in range(N_RUNS):
+                            jobs.append((suite, ("exact", "S", n, s), "base", m, r, EXACT_BUDGET))
+            for m in METHODS18:
+                for r in range(N_RUNS):
+                    jobs.append((suite, ("case",), "base", m, r, CASE_BUDGET))
         elif suite == "poc":
             for sc, n in [("S", 15), ("M", 30), ("L", 50), ("L", 75)]:
                 for s in range(1, 6):
@@ -180,6 +198,29 @@ def make_inst(spec, cfg):
 class Policies:
     def __init__(self):
         self.vns, self.alns, self.freq = {}, {}, {}
+        self.vns18, self.freq18, self._dom = {}, {}, None
+
+    def vns18_agent(self, k):
+        if k not in self.vns18:
+            a = PPOAgent(n_actions=18, state_dim=STATE_DIM_VNS)
+            a.load(str(MODELS / f"vns18_seed{k}_best.pt"), for_inference=True)
+            self.vns18[k] = a
+        return self.vns18[k]
+
+    def marginal18(self, k):
+        if k not in self.freq18:
+            info = json.load(open(MODELS / f"vns18_seed{k}_info.json"))
+            p = np.asarray(info["valid_action_freq"], float)
+            self.freq18[k] = p / p.sum()
+        return self.freq18[k]
+
+    def dominant18(self):
+        """The action the trained policies play most often on the validation
+        instances; the control that always uses it."""
+        if self._dom is None:
+            fr = np.mean([self.marginal18(k) for k in range(1, N_POLICIES + 1)], axis=0)
+            self._dom = int(np.argmax(fr))
+        return self._dom
 
     def vns_agent(self, k):
         if k not in self.vns:
@@ -222,6 +263,18 @@ def make_solver(method, k, pol):
         return VNS9("roulette")
     if method == "Marginal-9":
         return VNS9("marginal", marginal=pol.marginal(k))
+    if method == "DRL-VNS18":
+        return DRLVNS(pol.vns18_agent(k), n_actions=18)
+    if method == "VNS-18":
+        return VNS9("cyclic", n_actions=18)
+    if method == "Fixed-dominant":
+        return VNS9("fixed", n_actions=18, fixed_action=pol.dominant18())
+    if method == "Random-18":
+        return VNS9("random", n_actions=18)
+    if method == "Roulette-18":
+        return VNS9("roulette", n_actions=18)
+    if method == "Marginal-18":
+        return VNS9("marginal", n_actions=18, marginal=pol.marginal18(k))
     raise ValueError(method)
 
 
@@ -266,7 +319,8 @@ def main():
         if (suite, inst.name, cfg, method, run) in done:
             continue
         k = run % N_POLICIES + 1
-        uses_policy = method in ("DRL-VNS", "DRL-ALNS", "Marginal-9")
+        uses_policy = method in ("DRL-VNS", "DRL-ALNS", "Marginal-9",
+                                 "DRL-VNS18", "Marginal-18")
         solver = make_solver(method, k, pol)
         res = solver.solve(inst, seed=run, time_limit=budget)
         best = res["best"]
