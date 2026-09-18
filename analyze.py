@@ -31,6 +31,11 @@ sys.stdout.reconfigure(encoding="utf-8")
 METHODS = ["VNS", "ALNS+", "DRL-ALNS", "VNS-9", "Fixed-small", "Random-9",
            "Roulette-9", "Marginal-9", "DRL-VNS"]
 PROPOSED = "DRL-VNS"
+# the eighteen-action family; VNS is the shared external baseline
+METHODS18 = ["VNS", "VNS-18", "Fixed-dominant", "Random-18", "Roulette-18",
+             "Marginal-18", "DRL-VNS18"]
+PROPOSED18 = "DRL-VNS18"
+ALL = METHODS + [m for m in METHODS18 if m not in METHODS]
 CLASSES = ["S", "M", "L", "XL"]
 VIOL = ["demand_viol", "cap_viol", "n1_viol", "n2_viol",
         "dup_visit_viol", "zero_qty_stops"]
@@ -73,15 +78,17 @@ def holm(pvals):
     return adj
 
 
-def paired_tests(piv, scope, rows):
+def paired_tests(piv, scope, rows, methods=None, proposed=None):
+    methods = methods or METHODS
+    proposed = proposed or PROPOSED
     ps, labels = [], []
-    for m in METHODS:
-        if m == PROPOSED or m not in piv:
+    for m in methods:
+        if m == proposed or m not in piv:
             continue
-        pair = piv[[m, PROPOSED]].dropna()
+        pair = piv[[m, proposed]].dropna()
         if len(pair) < 5:
             continue
-        a, b = pair[m].values, pair[PROPOSED].values
+        a, b = pair[m].values, pair[proposed].values
         d = a - b
         if np.all(np.abs(d) < 1e-9):
             p, stat = 1.0, 0.0
@@ -92,7 +99,7 @@ def paired_tests(piv, scope, rows):
         if len(nz):
             n = len(nz)
             z = abs(stat - n * (n + 1) / 4) / np.sqrt(n * (n + 1) * (2 * n + 1) / 24)
-        rows.append({"scope": scope, "comparison": f"{PROPOSED} vs {m}",
+        rows.append({"scope": scope, "comparison": f"{proposed} vs {m}",
                      "N": len(d), "wins": int((d > 1e-9).sum()),
                      "losses": int((d < -1e-9).sum()),
                      "ties": int((np.abs(d) <= 1e-9).sum()),
@@ -108,7 +115,8 @@ def paired_tests(piv, scope, rows):
 
 
 def main():
-    runs = load("runs_main_exact_case_shard*.csv")
+    runs = pd.concat([load("runs_main_exact_case_shard*.csv"),
+                      load("runs_family18_shard*.csv")], ignore_index=True)
     if runs.empty:
         print("no main results yet")
         return
@@ -124,7 +132,7 @@ def main():
     print(f"{len(allr)} runs, total violations {int(allr[VIOL].sum().sum())}, "
           f"max load/Q {allr.max_util.max():.4f}")
 
-    main_df = runs[runs.suite == "main"]
+    main_df = runs[runs.suite.isin(["main", "family18"])]
     # 2. per instance statistics over the 10 runs
     per = (main_df.groupby(["instance", "size_class", "n", "method"])
            .agg(mean_Z=("Z_best", "mean"), median_Z=("Z_best", "median"),
@@ -140,7 +148,7 @@ def main():
     rows = []
     for sc in CLASSES + ["Overall"]:
         sub = per if sc == "Overall" else per[per.size_class == sc]
-        for m in METHODS:
+        for m in ALL:
             s = sub[sub.method == m]
             if not len(s):
                 continue
@@ -155,9 +163,9 @@ def main():
     summ = pd.DataFrame(rows)
     summ.to_csv(RES / "summary.csv", index=False)
     print("\n=== improvement over Clarke-Wright (%, mean of 10 runs) ===")
-    print(summ.pivot(index="scope", columns="method",
+    tbl = summ.pivot(index="scope", columns="method",
                      values="impr_over_CW_pct").reindex(CLASSES + ["Overall"])
-          [METHODS].round(2).to_string())
+    print(tbl[[m for m in ALL if m in tbl]].round(2).to_string())
 
     # 4. paired tests on per-instance means
     piv = per.pivot(index=["instance", "size_class"], columns="method",
@@ -168,6 +176,12 @@ def main():
         sub = piv[piv.size_class == sc]
         if len(sub) >= 5:
             paired_tests(sub, sc, stat_rows)
+    if PROPOSED18 in piv:
+        paired_tests(piv, "Overall", stat_rows, METHODS18, PROPOSED18)
+        for sc in CLASSES:
+            sub = piv[piv.size_class == sc]
+            if len(sub) >= 5:
+                paired_tests(sub, sc, stat_rows, METHODS18, PROPOSED18)
     st = pd.DataFrame(stat_rows)
     st.to_csv(RES / "statistics.csv", index=False)
     print("\n=== DRL-VNS vs each method (Wilcoxon, Holm-corrected) ===")
@@ -179,7 +193,7 @@ def main():
     frows = []
     for sc in CLASSES + ["Overall"]:
         sub = piv if sc == "Overall" else piv[piv.size_class == sc]
-        cols = [m for m in METHODS if m in sub]
+        cols = [m for m in ALL if m in sub]
         data = [sub[m].values for m in cols]
         if len(sub) >= 5:
             chi, p = friedmanchisquare(*data)
@@ -189,7 +203,7 @@ def main():
     pd.DataFrame(frows).to_csv(RES / "friedman.csv", index=False)
 
     # 6. variation across the five trained policies
-    pol = (main_df[main_df.method.isin(["DRL-VNS", "DRL-ALNS"])]
+    pol = (main_df[main_df.method.isin(["DRL-VNS", "DRL-ALNS", "DRL-VNS18"])]
            .groupby(["method", "policy_seed", "instance"])
            .agg(Z=("Z_best", "mean"), cw=("Z_init", "mean")).reset_index())
     pol["impr"] = (pol.cw - pol.Z) / pol.cw * 100
@@ -219,8 +233,8 @@ def main():
                   f"(min {worst:.3f}%) — the heuristics and the MILP would not be "
                   f"solving the same problem:\n{bad[['instance','method','mean_gap_pct']]}")
         print("\n=== gap to proven optimum (%) ===")
-        print(pr.pivot_table(index="n", columns="method",
-                             values="mean_gap_pct")[METHODS].round(2).to_string())
+        gp = pr.pivot_table(index="n", columns="method", values="mean_gap_pct")
+        print(gp[[m for m in ALL if m in gp]].round(2).to_string())
 
     # 8. case study
     cs = runs[runs.suite == "case"]
