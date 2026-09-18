@@ -132,7 +132,11 @@ def main():
     print(f"{len(allr)} runs, total violations {int(allr[VIOL].sum().sum())}, "
           f"max load/Q {allr.max_util.max():.4f}")
 
-    main_df = runs[runs.suite.isin(["main", "family18"])]
+    # the benchmark instances only: the family18 suite also contains the
+    # exact and case-study runs, which must not enter this comparison
+    main_df = runs[runs.suite.isin(["main", "family18"])
+                   & runs.size_class.isin(CLASSES)
+                   & (runs.n >= 15)]          # exclude the exact-study sizes
     # 2. per instance statistics over the 10 runs
     per = (main_df.groupby(["instance", "size_class", "n", "method"])
            .agg(mean_Z=("Z_best", "mean"), median_Z=("Z_best", "median"),
