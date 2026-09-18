@@ -1,0 +1,12 @@
+train alns_seed4: 250 episodes, network parameters 11795
+ep   25 n= 75 steps=  982 gain= 11.88% valid= 10.28% elapsed=6.9 min (saved)
+ep   50 n= 75 steps=  926 gain=  9.47% valid= 11.05% elapsed=13.8 min (saved)
+ep   75 n= 75 steps=  944 gain=  7.64% valid= 10.37% elapsed=20.6 min
+ep  100 n= 75 steps=  918 gain=  7.77% valid= 10.96% elapsed=27.5 min
+ep  125 n= 75 steps=  891 gain= 12.89% valid= 10.47% elapsed=34.4 min
+ep  150 n= 75 steps=  993 gain=  8.53% valid=  9.39% elapsed=41.6 min
+ep  175 n= 75 steps=  941 gain= 13.92% valid= 10.06% elapsed=48.5 min
+ep  200 n= 75 steps=  927 gain=  7.07% valid= 11.44% elapsed=55.4 min (saved)
+ep  225 n= 75 steps= 1160 gain=  7.33% valid= 12.62% elapsed=62.5 min (saved)
+ep  250 n= 75 steps=  824 gain=  8.80% valid= 10.80% elapsed=69.7 min
+done alns_seed4: best episode 225, valid 12.62%, 763886 environment steps, 71.29 min

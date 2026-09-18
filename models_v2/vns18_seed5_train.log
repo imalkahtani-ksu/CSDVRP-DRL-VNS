@@ -1,0 +1,12 @@
+train vns18_seed5: 250 episodes, network parameters 11155
+ep   25 n= 75 steps=  936 gain= 12.06% valid= 12.75% elapsed=12.8 min (saved)
+ep   50 n= 75 steps= 1003 gain= 15.88% valid= 13.25% elapsed=19.7 min (saved)
+ep   75 n= 75 steps= 1339 gain= 12.54% valid= 13.60% elapsed=26.5 min (saved)
+ep  100 n= 75 steps= 1221 gain= 11.37% valid= 13.21% elapsed=33.2 min
+ep  125 n= 75 steps=  951 gain= 16.76% valid= 13.33% elapsed=40.0 min
+ep  150 n= 75 steps=  916 gain=  7.88% valid= 12.56% elapsed=46.8 min
+ep  175 n= 75 steps=  810 gain= 12.30% valid= 13.14% elapsed=53.5 min
+ep  200 n= 75 steps=  915 gain= 17.66% valid= 13.08% elapsed=60.3 min
+ep  225 n= 75 steps=  903 gain= 12.59% valid= 13.39% elapsed=67.1 min
+ep  250 n= 75 steps= 1100 gain= 12.40% valid= 13.30% elapsed=73.9 min
+done vns18_seed5: best episode 75, valid 13.60%, 687992 environment steps, 75.41 min

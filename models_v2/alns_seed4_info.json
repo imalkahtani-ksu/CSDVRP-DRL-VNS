@@ -1,0 +1,10 @@
+{
+  "algo": "alns",
+  "seed": 4,
+  "episodes": 250,
+  "env_steps": 763886,
+  "network_parameters": 11795,
+  "best_episode": 225,
+  "best_valid_gain": 12.618041334062665,
+  "train_minutes": 71.29
+}
