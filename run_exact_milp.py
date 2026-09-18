@@ -37,9 +37,11 @@ def main():
     ap.add_argument("--sizes", default=",".join(str(s) for s in SIZES))
     ap.add_argument("--tl", type=int, default=TL)
     ap.add_argument("--tag", default="")
+    ap.add_argument("--seeds", default=",".join(str(s) for s in SEEDS))
     args = ap.parse_args()
     sizes = [int(x) for x in args.sizes.split(",")]
-    jobs = [(n, s) for n in sizes for s in SEEDS][args.shard::args.nshards]
+    seeds = [int(x) for x in args.seeds.split(",")]
+    jobs = [(n, s) for n in sizes for s in seeds][args.shard::args.nshards]
     out = ROOT / "results_v2" / f"exact_milp{args.tag}_shard{args.shard}.csv"
     out.parent.mkdir(exist_ok=True)
     done = set()

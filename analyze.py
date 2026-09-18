@@ -48,6 +48,19 @@ def load(pattern):
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
+def load_exact():
+    """All exact runs, keeping for each instance the proven optimum if one
+    exists and otherwise the longest attempt."""
+    ex = pd.concat([load("exact_milp_shard*.csv"),
+                    load("exact_milp_n12_shard*.csv"),
+                    load("exact_milp_n12long_s*.csv")], ignore_index=True)
+    if ex.empty:
+        return ex
+    ex["proven"] = ex["proven"].astype(bool)
+    ex = ex.sort_values(["proven", "time_s"], ascending=[False, False])
+    return ex.drop_duplicates(subset="instance", keep="first").reset_index(drop=True)
+
+
 def holm(pvals):
     order = np.argsort(pvals)
     m = len(pvals)
@@ -184,11 +197,7 @@ def main():
         ["mean", "std", "count"]).round(3).to_csv(RES / "policy_seeds.csv")
 
     # 7. exact gaps
-    ex = load("exact_milp_n12_shard*.csv")
-    ex0 = load("exact_milp_shard*.csv")
-    if not ex0.empty:
-        ex0 = ex0[ex0.n != 12] if not ex.empty else ex0
-        ex = pd.concat([ex0, ex], ignore_index=True)
+    ex = load_exact()
     er = runs[runs.suite == "exact"]
     if not ex.empty and not er.empty:
         ref = ex.set_index("instance")
