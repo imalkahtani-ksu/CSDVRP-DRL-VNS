@@ -37,9 +37,22 @@ from src.budgets import BUDGET
 
 EPISODES = 250
 VALID_EVERY = 25
-TRAIN_SIZES = [("S", 15), ("S", 20), ("M", 30), ("M", 50), ("L", 75)]
-VALID_SET = [("S", 20, 9000), ("S", 20, 9001), ("M", 50, 9002),
-             ("M", 50, 9003), ("L", 75, 9004), ("L", 75, 9005)]
+# "small": the range used in the first version of the study, which stops at
+# n = 75 and leaves the two largest benchmark sizes to zero-shot transfer.
+# "full": the same range the methods are evaluated on.
+TRAIN_RANGES = {
+    "small": [("S", 15), ("S", 20), ("M", 30), ("M", 50), ("L", 75)],
+    "full": [("S", 15), ("S", 20), ("M", 30), ("M", 50), ("L", 75),
+             ("L", 100), ("XL", 150)],
+}
+VALID_SETS = {
+    "small": [("S", 20, 9000), ("S", 20, 9001), ("M", 50, 9002),
+              ("M", 50, 9003), ("L", 75, 9004), ("L", 75, 9005)],
+    "full": [("S", 20, 9000), ("M", 50, 9002), ("L", 75, 9004),
+             ("L", 100, 9006), ("XL", 150, 9007)],
+}
+TRAIN_SIZES = TRAIN_RANGES["small"]
+VALID_SET = VALID_SETS["small"]
 
 
 def build(algo, n_actions=9):
@@ -68,11 +81,15 @@ def main():
     ap.add_argument("--out", default="models_v2")
     ap.add_argument("--valid-every", type=int, default=VALID_EVERY)
     ap.add_argument("--actions", type=int, default=9, choices=[9, 18])
+    ap.add_argument("--range", choices=["small", "full"], default="small",
+                    help="instance sizes used for training")
     args = ap.parse_args()
 
     out = Path(__file__).parent / args.out
     out.mkdir(exist_ok=True)
     tag = f"{args.algo}{'' if args.actions == 9 else args.actions}_seed{args.seed}"
+    train_sizes = TRAIN_RANGES[args.range]
+    valid_set = VALID_SETS[args.range]
     logf = open(out / f"{tag}_train.log", "w", encoding="utf-8", buffering=1)
     curve = []
 
@@ -84,14 +101,15 @@ def main():
     np.random.seed(args.seed)
     agent, solver = build(args.algo, args.actions)
     n_params = sum(p.numel() for p in agent.net.parameters())
-    valid = [(make_instance(n, sc, seed=s), n) for sc, n, s in VALID_SET]
-    log(f"train {tag}: {args.episodes} episodes, network parameters {n_params}")
+    valid = [(make_instance(n, sc, seed=s), n) for sc, n, s in valid_set]
+    log(f"train {tag}: {args.episodes} episodes over sizes "
+        f"{[n for _, n in train_sizes]}, network parameters {n_params}")
 
     best_v, best_ep = -1e9, -1
     steps = 0
     t0 = time.perf_counter()
     for ep in range(args.episodes):
-        sc, n = TRAIN_SIZES[ep % len(TRAIN_SIZES)]
+        sc, n = train_sizes[ep % len(train_sizes)]
         inst = make_instance(n, sc, seed=100000 + 1000 * args.seed + ep)
         agent.net.train()
         r = solver.solve(inst, seed=args.seed * 100000 + ep,
@@ -119,6 +137,8 @@ def main():
     agent.load(str(out / f"{tag}_best.pt"), for_inference=True)
     v, counts = validate(solver, valid)
     info = {"algo": args.algo, "seed": args.seed, "episodes": args.episodes,
+            "train_range": args.range,
+            "train_sizes": [n for _, n in train_sizes],
             "env_steps": steps, "network_parameters": n_params,
             "best_episode": best_ep, "best_valid_gain": best_v,
             "train_minutes": round((time.perf_counter() - t0) / 60, 2)}
