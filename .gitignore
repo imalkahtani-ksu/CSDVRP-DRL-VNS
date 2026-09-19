@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .DS_Store
 Thumbs.db
+
+# third-party benchmark data: fetched by tools/fetch_sdvrp_set1.py, not redistributed
+data/sdvrp_set1/
