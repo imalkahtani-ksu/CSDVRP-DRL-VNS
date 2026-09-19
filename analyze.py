@@ -35,7 +35,13 @@ PROPOSED = "DRL-VNS"
 METHODS18 = ["VNS", "VNS-18", "Fixed-dominant", "Random-18", "Roulette-18",
              "Marginal-18", "DRL-VNS18"]
 PROPOSED18 = "DRL-VNS18"
-ALL = METHODS + [m for m in METHODS18 if m not in METHODS]
+# the same learned methods with the training range extended to cover every
+# benchmark size, against the VNS baseline whose k_max was tuned on the
+# validation instances exactly as the policies were selected
+METHODSF = ["VNS", "VNS-tuned", "Marginal-9-F", "DRL-VNS18-F",
+            "Marginal-18-F", "DRL-VNS-F"]
+PROPOSEDF = "DRL-VNS-F"
+ALL = METHODS + [m for m in METHODS18 + METHODSF if m not in METHODS]
 CLASSES = ["S", "M", "L", "XL"]
 VIOL = ["demand_viol", "cap_viol", "n1_viol", "n2_viol",
         "dup_visit_viol", "zero_qty_stops"]
@@ -116,7 +122,8 @@ def paired_tests(piv, scope, rows, methods=None, proposed=None):
 
 def main():
     runs = pd.concat([load("runs_main_exact_case_shard*.csv"),
-                      load("runs_family18_shard*.csv")], ignore_index=True)
+                      load("runs_family18_shard*.csv"),
+                      load("runs_fullrange_shard*.csv")], ignore_index=True)
     if runs.empty:
         print("no main results yet")
         return
@@ -134,7 +141,7 @@ def main():
 
     # the benchmark instances only: the family18 suite also contains the
     # exact and case-study runs, which must not enter this comparison
-    main_df = runs[runs.suite.isin(["main", "family18"])
+    main_df = runs[runs.suite.isin(["main", "family18", "fullrange"])
                    & runs.size_class.isin(CLASSES)
                    & (runs.n >= 15)]          # exclude the exact-study sizes
     # 2. per instance statistics over the 10 runs
@@ -186,6 +193,20 @@ def main():
             sub = piv[piv.size_class == sc]
             if len(sub) >= 5:
                 paired_tests(sub, sc, stat_rows, METHODS18, PROPOSED18)
+    if PROPOSEDF in piv:
+        paired_tests(piv, "Overall", stat_rows, METHODSF, PROPOSEDF)
+        for sc in CLASSES:
+            sub = piv[piv.size_class == sc]
+            if len(sub) >= 5:
+                paired_tests(sub, sc, stat_rows, METHODSF, PROPOSEDF)
+        # the eighteen-action policy of the same family, against its own
+        # state-blind control and the tuned baseline
+        mf18 = ["VNS", "VNS-tuned", "Marginal-18-F", "DRL-VNS-F", "DRL-VNS18-F"]
+        paired_tests(piv, "Overall", stat_rows, mf18, "DRL-VNS18-F")
+        for sc in CLASSES:
+            sub = piv[piv.size_class == sc]
+            if len(sub) >= 5:
+                paired_tests(sub, sc, stat_rows, mf18, "DRL-VNS18-F")
     st = pd.DataFrame(stat_rows)
     st.to_csv(RES / "statistics.csv", index=False)
     print("\n=== DRL-VNS vs each method (Wilcoxon, Holm-corrected) ===")

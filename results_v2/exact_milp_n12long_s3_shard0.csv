@@ -1,0 +1,2 @@
+instance,n,seed,split_eligible,total_demand,Q,cw_routes,K,status,proven,Z,LB,gap_pct,time_s,vehicles_used,cbc_version,K1_status,K1_Z,K1_time_s,K1_vehicles_used
+CSDVRP-S-n12-s3,12,3,3,56.06,15.0,6,7,TimeLimit,False,522.4877761291334,512.292,1.9902274736153167,14405.31,4,2.10.3,,,,

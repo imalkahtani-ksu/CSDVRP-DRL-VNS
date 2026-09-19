@@ -2,11 +2,15 @@ method,demand_viol,cap_viol,n1_viol,n2_viol,dup_visit_viol,zero_qty_stops,runs
 ALNS+,0,0,0,0,0,0,630
 DRL-ALNS,0,0,0,0,0,0,630
 DRL-VNS,0,0,0,0,0,0,975
+DRL-VNS-F,0,0,0,0,0,0,420
 DRL-VNS18,0,0,0,0,0,0,630
+DRL-VNS18-F,0,0,0,0,0,0,420
 Fixed-dominant,0,0,0,0,0,0,630
 Fixed-small,0,0,0,0,0,0,630
 Marginal-18,0,0,0,0,0,0,630
+Marginal-18-F,0,0,0,0,0,0,420
 Marginal-9,0,0,0,0,0,0,630
+Marginal-9-F,0,0,0,0,0,0,420
 Random-18,0,0,0,0,0,0,630
 Random-9,0,0,0,0,0,0,630
 Roulette-18,0,0,0,0,0,0,630
@@ -14,3 +18,4 @@ Roulette-9,0,0,0,0,0,0,630
 VNS,0,0,0,0,0,0,1475
 VNS-18,0,0,0,0,0,0,630
 VNS-9,0,0,0,0,0,0,630
+VNS-tuned,0,0,0,0,0,0,420

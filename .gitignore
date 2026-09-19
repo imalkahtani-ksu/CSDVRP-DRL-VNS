@@ -5,3 +5,7 @@ Thumbs.db
 
 # third-party benchmark data: fetched by tools/fetch_sdvrp_set1.py, not redistributed
 data/sdvrp_set1/
+
+# job lists and pool logs: local orchestration scratch, with absolute paths
+jobs/
+logs_v2/
