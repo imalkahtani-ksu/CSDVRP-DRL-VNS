@@ -64,6 +64,13 @@ Two action sets are studied: nine actions (3 removal operators × 3 strengths,
 greedy insertion) and eighteen actions, which add regret-2 insertion so that
 the set **contains the moves of the VNS baseline**.
 
+Each learned method is evaluated twice: with policies trained up to `n = 75`,
+which leaves the two largest benchmark sizes to zero-shot transfer, and with
+policies retrained over the whole size range the benchmark evaluates
+(`models_v3/`, reported with the suffix `-F`). Symmetrically, the baseline's
+one free parameter is tuned on the same held-out instances used to select the
+policies: `tune_vns.py` sweeps `k_max` and `VNS-tuned` uses the winner.
+
 ## Summary of results
 
 Equal CPU budget, 42 instances, 10 runs per instance and method, five
@@ -73,10 +80,14 @@ Mean improvement over Clarke–Wright (%):
 
 | Method | S | M | L | XL | All |
 |--------|---|---|---|----|-----|
-| VNS | 10.52 | 14.63 | 12.20 | **12.22** | **12.42** |
-| DRL-VNS | 10.47 | **14.89** | **12.21** | 11.56 | 12.38 |
+| DRL-VNS18-F | 10.55 | **14.93** | 12.19 | 12.16 | **12.50** |
+| DRL-VNS-F | 10.51 | 14.85 | **12.29** | 11.97 | 12.47 |
+| VNS-tuned | **10.68** | 14.68 | 12.15 | **12.24** | 12.47 |
+| VNS | 10.52 | 14.63 | 12.20 | 12.22 | 12.42 |
+| DRL-VNS | 10.47 | 14.89 | 12.21 | 11.56 | 12.38 |
 | Roulette-9 | 10.65 | 14.80 | 11.99 | 11.68 | 12.36 |
-| Marginal-9 | **10.70** | 14.72 | 11.96 | 11.16 | 12.27 |
+| Marginal-9-F | 10.59 | 14.73 | 12.08 | 11.54 | 12.33 |
+| Marginal-9 | 10.70 | 14.72 | 11.96 | 11.16 | 12.27 |
 | VNS-9 | 10.34 | 14.66 | 11.83 | 11.04 | 12.10 |
 | DRL-ALNS | 9.75 | 13.13 | 8.67 | 8.55 | 10.24 |
 | ALNS+ | 9.39 | 13.02 | 7.89 | 8.03 | 9.81 |
@@ -84,19 +95,36 @@ Mean improvement over Clarke–Wright (%):
 - **DRL-VNS does not beat standard VNS** (17 wins / 23 losses, Holm-corrected
   *p* = 0.87), and is worse on the largest instances. It clearly beats both
   ALNS variants (*p* < 0.001).
+- **That is not an artifact of an unfair setup.** Retraining the policies over
+  the whole benchmark size range helps them most where they were weakest
+  (extra-large: 11.56% → 11.97%), and tuning the baseline's `k_max` on the
+  validation instances helps it a little (12.42% → 12.47%). Neither changes the
+  verdict: 19–20 against VNS (*p* = 1.00) and 22–15 against the tuned baseline
+  (*p* = 0.99).
+- **By Friedman average rank the proposed method does come first** over all 20
+  methods (6.64 against 7.94 for VNS, χ² = 244.0 on 19 d.f.). Ranks reward
+  being near the top often; the signed-rank test asks whether the 42 paired
+  differences are consistently away from zero. The first holds here, the second
+  does not, and we claim neither as a win.
+- Where learning does help is bounded: at class M the full-range policies beat
+  even the tuned baseline (10–2, *p* = 0.024; 11–1, *p* = 0.014), and at class
+  XL they still trail it.
 - Within the nine-action set it does beat the cyclic, uniform, fixed and
   state-blind controls, including Marginal-9 (*p* = 0.032; at class L,
   11 wins against 1, *p* = 0.005), so the policy does use the search state.
+  This survives retraining over the full size range (24–12, *p* = 0.020).
 - With the **eighteen-action set**, which contains the baseline's moves,
   DRL-VNS18 is statistically indistinguishable from *every* control,
   including the state-blind one. The action set matters more than the rule
   that picks among it.
-- Exact solver: optimality proven for 17 of 20 small instances; all methods
-  except one control are within 0.14% of the proven optima on average.
+- Exact solver: optimality proven for 18 of 20 small instances, the last of
+  them after an 11,415-second solve at a four-hour limit. Every method reaches
+  the certified optimum to within 0.007% in its best run; on the mean of ten
+  runs all but one control lie between 0.02% and 0.25%.
 - Price of control: the three controls remove 93–97% of split customers for
   about 1% additional routing cost; the contact penalty does most of the work
   and the visit cap is rarely binding.
-- Feasibility audit: **0 violations in 10,892 solver runs**.
+- Feasibility audit: **0 violations in 12,992 solver runs**.
 
 ## Repository layout
 
@@ -114,7 +142,9 @@ src/                 problem model, solvers, instance generator, exact MILP
   exact_milp.py      exact MILP (PuLP/CBC), single-commodity flow
   gen_benchmark.py   benchmark instance generator
   budgets.py         CPU-time budgets per instance size
-train_policy.py      train one policy (--algo vns|alns, --actions 9|18)
+train_policy.py      train one policy (--algo vns|alns, --actions 9|18,
+                     --range small|full)
+tune_vns.py          sweep k_max of the VNS baseline on validation instances
 run_experiments.py   all heuristic suites (benchmark, exact, case, poc, sens)
 run_exact_milp.py    exact solutions of the small instances
 run_sdvrp_benchmark.py  the same solvers on the classical SDVRP SET-1
@@ -122,7 +152,8 @@ analyze.py           aggregation, Wilcoxon with Holm correction, Friedman
 make_tables.py       writes the LaTeX tables of the paper from the raw results
 make_figures.py      writes the figures of the paper
 tools/               job pool, SET-1 fetcher, highlighted-PDF builder
-models_v2/           trained policies, training logs and curves
+models_v2/           trained policies (trained up to n = 75), logs and curves
+models_v3/           the same, retrained over the whole benchmark size range
 results_v2/          one row per solver run, with audit columns
 figures_v2/          figures used in the paper
 tables_v2/           LaTeX tables used in the paper
@@ -137,8 +168,17 @@ python train_policy.py --algo vns --actions 9  --seed 1     # and seeds 2..5
 python train_policy.py --algo vns --actions 18 --seed 1     # and seeds 2..5
 python train_policy.py --algo alns --seed 1                 # and seeds 2..5
 
+# the same policies over the whole benchmark size range, into models_v3/
+python train_policy.py --algo vns --actions 9  --range full --seed 1 \
+                       --out models_v3                      # and seeds 2..5
+python train_policy.py --algo vns --actions 18 --range full --seed 1 \
+                       --out models_v3                      # and seeds 2..5
+
+python tune_vns.py                    # k_max of the baseline, on validation
+
 python run_experiments.py --suites main,exact,case --shard 0 --nshards 6
 python run_experiments.py --suites family18 --shard 0 --nshards 5
+python run_experiments.py --suites fullrange --shard 0 --nshards 6
 python run_experiments.py --suites poc,sens,csens --shard 0 --nshards 4
 python run_exact_milp.py
 
