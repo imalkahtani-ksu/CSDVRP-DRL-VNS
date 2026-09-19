@@ -1,0 +1,12 @@
+train vns_seed2: 250 episodes over sizes [15, 20, 30, 50, 75, 100, 150], network parameters 10570
+ep   25 n= 50 steps= 1314 gain= 17.63% valid= 13.04% elapsed=10.7 min (saved)
+ep   50 n= 15 steps= 1660 gain=  7.68% valid= 12.79% elapsed=22.7 min
+ep   75 n= 75 steps= 1426 gain= 12.51% valid= 13.44% elapsed=33.4 min (saved)
+ep  100 n= 20 steps= 4274 gain= 10.82% valid= 13.89% elapsed=44.8 min (saved)
+ep  125 n=100 steps=  772 gain= 14.64% valid= 12.83% elapsed=55.9 min
+ep  150 n= 30 steps= 2737 gain=  8.52% valid= 13.02% elapsed=66.8 min
+ep  175 n=150 steps= 1358 gain= 16.66% valid= 13.84% elapsed=78.6 min
+ep  200 n= 50 steps= 2063 gain= 11.25% valid= 13.89% elapsed=88.9 min
+ep  225 n= 15 steps= 3781 gain= 15.04% valid= 14.13% elapsed=100.9 min (saved)
+ep  250 n= 75 steps= 1162 gain= 17.12% valid= 13.90% elapsed=112.0 min
+done vns_seed2: best episode 225, valid 14.13%, 537703 environment steps, 114.27 min

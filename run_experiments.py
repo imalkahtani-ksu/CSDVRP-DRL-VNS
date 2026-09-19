@@ -50,6 +50,7 @@ from src.budgets import BUDGET, EXACT_BUDGET, CASE_BUDGET
 
 RES = ROOT / "results_v2"
 MODELS = ROOT / "models_v2"
+MODELS_FULL = ROOT / "models_v3"
 CASE_DIR = ROOT / "data" / "case_study_riyadh"
 
 ALL_METHODS = ["VNS", "ALNS+", "DRL-ALNS", "DRL-VNS", "VNS-9",
@@ -58,6 +59,12 @@ ALL_METHODS = ["VNS", "ALNS+", "DRL-ALNS", "DRL-VNS", "VNS-9",
 # standard VNS baseline (both insertion operators)
 METHODS18 = ["DRL-VNS18", "VNS-18", "Fixed-dominant", "Random-18",
              "Roulette-18", "Marginal-18"]
+# the same learned methods, but with policies trained on the whole size range
+# that the benchmark evaluates (models_v3); "-F" marks the full training range
+METHODS_FULL = ["DRL-VNS-F", "Marginal-9-F", "DRL-VNS18-F", "Marginal-18-F",
+                "VNS-tuned"]
+# k_max of the VNS baseline, chosen on the validation instances by tune_vns.py
+VNS_TUNED_KMAX = 8
 GRID = [("S", 15), ("S", 20), ("M", 30), ("M", 50),
         ("L", 75), ("L", 100), ("XL", 150)]
 N_RUNS = 10
@@ -139,6 +146,12 @@ def build_jobs(suites):
             for m in METHODS18:
                 for r in range(N_RUNS):
                     jobs.append((suite, ("case",), "base", m, r, CASE_BUDGET))
+        elif suite == "fullrange":
+            for sc, n in GRID:
+                for s in range(6):
+                    for m in METHODS_FULL:
+                        for r in range(N_RUNS):
+                            jobs.append((suite, ("bench", sc, n, s), "base", m, r, BUDGET[n]))
         elif suite == "poc":
             for sc, n in [("S", 15), ("M", 30), ("L", 50), ("L", 75)]:
                 for s in range(1, 6):
@@ -199,6 +212,7 @@ class Policies:
     def __init__(self):
         self.vns, self.alns, self.freq = {}, {}, {}
         self.vns18, self.freq18, self._dom = {}, {}, None
+        self.full, self.full_freq = {}, {}
 
     def vns18_agent(self, k):
         if k not in self.vns18:
@@ -236,6 +250,24 @@ class Policies:
             self.alns[k] = a
         return self.alns[k]
 
+    def _full_agent(self, k, n_actions):
+        key = (k, n_actions)
+        if key not in self.full:
+            a = PPOAgent(n_actions=n_actions, state_dim=STATE_DIM_VNS)
+            stem = "vns" if n_actions == 9 else "vns18"
+            a.load(str(MODELS_FULL / f"{stem}_seed{k}_best.pt"), for_inference=True)
+            self.full[key] = a
+        return self.full[key]
+
+    def _full_marginal(self, k, n_actions):
+        key = (k, n_actions)
+        if key not in self.full_freq:
+            stem = "vns" if n_actions == 9 else "vns18"
+            info = json.load(open(MODELS_FULL / f"{stem}_seed{k}_info.json"))
+            q = np.asarray(info["valid_action_freq"], float)
+            self.full_freq[key] = q / q.sum()
+        return self.full_freq[key]
+
     def marginal(self, k):
         if k not in self.freq:
             info = json.load(open(MODELS / f"vns_seed{k}_info.json"))
@@ -247,6 +279,8 @@ class Policies:
 def make_solver(method, k, pol):
     if method == "VNS":
         return VNS()
+    if method == "VNS-tuned":
+        return VNS()          # k_max is passed at solve time
     if method == "ALNS+":
         return ClassicalALNSPlus()
     if method == "DRL-ALNS":
@@ -275,6 +309,14 @@ def make_solver(method, k, pol):
         return VNS9("roulette", n_actions=18)
     if method == "Marginal-18":
         return VNS9("marginal", n_actions=18, marginal=pol.marginal18(k))
+    if method == "DRL-VNS-F":
+        return DRLVNS(pol._full_agent(k, 9), n_actions=9)
+    if method == "Marginal-9-F":
+        return VNS9("marginal", n_actions=9, marginal=pol._full_marginal(k, 9))
+    if method == "DRL-VNS18-F":
+        return DRLVNS(pol._full_agent(k, 18), n_actions=18)
+    if method == "Marginal-18-F":
+        return VNS9("marginal", n_actions=18, marginal=pol._full_marginal(k, 18))
     raise ValueError(method)
 
 
@@ -320,9 +362,14 @@ def main():
             continue
         k = run % N_POLICIES + 1
         uses_policy = method in ("DRL-VNS", "DRL-ALNS", "Marginal-9",
-                                 "DRL-VNS18", "Marginal-18")
+                                 "DRL-VNS18", "Marginal-18") or method.endswith("-F")
         solver = make_solver(method, k, pol)
-        res = solver.solve(inst, seed=run, time_limit=budget)
+        if method == "VNS-tuned":
+            res = solver.solve(inst, seed=run, time_limit=budget,
+                               k_max=VNS_TUNED_KMAX)
+            res["method"] = "VNS-tuned"
+        else:
+            res = solver.solve(inst, seed=run, time_limit=budget)
         best = res["best"]
         comp = best.components()
         aud = best.audit()
